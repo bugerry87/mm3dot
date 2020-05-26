@@ -4,14 +4,13 @@ import numpy as np
 
 # Local
 import .spatial as spatial
-from .kalman_tracker import KalmanTracker
+from .model import __dict__ as model_dict
 
 
 class MM3DOT():
     def __init__(self, models,
             dist_func=spatial.mahalanobis,
-            assign_func=spatial.greedy_threshold,
-            tracker_class=KalmanTracker,
+            assign_func=spatial.greedy_threshold
 			**kvargs
         ):
 		self.__trk_id_cntr__ = 0
@@ -34,6 +33,10 @@ class MM3DOT():
         for detection in detections:
 			if detection.label_class in self.models:
 				model = self.models[detection.label_class]
+				if model.type in model_dict:
+					model_type = model_dict[model.type]
+				else:
+					raise RuntimeWarning("Model type '{}' is not registered!".format(model.type))
 				self.__trk_id_cntr__ += 1
 				tracker = tracker_class(detection, model, **kvargs)
 				tracker.id = self.__trk_id_cntr__
@@ -84,13 +87,14 @@ class MM3DOT():
 			raise RuntimeWarning("WARNING: No data!")
 		else:
 			self.spawn_trackers(detections, **kvargs)
-			yield 'SPAWN', self
+			yield 'SPAWN'
 		for detections in data_generator:
+			self.predict(**kvargs)
+			yield 'PREDICT'
 			match_results = self.match(detections, **kvargs)
 			self.update(detections, *match_results, **kvargs)
-			yield 'UPDATE', self
+			yield 'UPDATE'
 			self.drop_trackers(**kvargs)
-			yield 'DROP', self
-			self.predict(**kvargs)
-			yield 'PREDICT', self
+			yield 'DROP'
+			
 			

@@ -3,7 +3,8 @@
 from glob import glob, iglob
 
 # Local
-import .model.MM3DOT
+from . import MM3DOT
+from .model import load_models
 
 
 def ifile(wildcards, sort=False, recursive=True):
@@ -66,35 +67,57 @@ def init_arg_parser(parents=[]):
     return parser
 
 
-def run_kitti(args):
+def load_kitti(args):
     raise NotImplementedError("KITTI is currently not supported")
 
 
-def run_nusenes(args):
+def load_nusenes(args):
     raise NotImplementedError("NUSCENES is currently not supported")
 
 
-def run_waymo(args):
+def load_waymo(args):
     raise NotImplementedError("WAYMO is currently not supported")
 
 
-def run_argoverse(args):
-	
-    pass
+def load_argoverse(args):
+	raise NotImplementedError("ARGOVERSE is currently not supported")
+
+
+def load_fake(args):
+	from .datapi.fake import FakeLoader
+	return FakeLoader()
 
 
 def main(args):
     if 'kitti' in args.dataset:
-        run_kitti(args)
+        dataloader = load_kitti(args)
     elif 'nuscenes' in args.dataset:
-        run_nusenes(args)
+        dataloader = load_nusenes(args)
 	elif 'waymo' in args.dataset:
-        run_waymo(args)
+        dataloader = load_waymo(args)
     elif 'argoverse' in args.dataset:
-        run_argoverse(args)
+        dataloader = load_argoverse(args)
+	elif 'fake' in args.dataset:
+        dataloader = load_fake(args)
     else:
         raise ValueError("ERROR: Dataset '{}' unknown.".format(args.dataset))
+	
+	models = load_models(ifile(args.model))
+	mm3dot = MM3DOT(models)
+	
+	for state in mm3dot.run(dataloader):
+		if 'SPAWN' in state:
+			pass
+		elif 'PREDICT' in state:
+			pass
+		elif 'UPDATE' in state:
+			pass
+		elif 'DROP' in state:
+			pass
+		else:
+			pass
     pass
+
 
 if __name__ == '__main__':
     parser = init_arg_parser()

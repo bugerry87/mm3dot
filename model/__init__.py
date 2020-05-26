@@ -1,6 +1,10 @@
 '''
 '''
+# Installed
 import numpy as np
+
+# Register all supported models here!!!
+from .kalman_tracker import KalmanTracker
 
 
 class Model():
@@ -18,7 +22,7 @@ class Model():
     def __init__(self, npz_file=None):
         self.npz_file = npz_file
         self.type = None
-        self.name = None
+		self.label = None
         self.input_dim = None
         self.output_dim = None
 		self.control_dim = None
@@ -32,6 +36,15 @@ class Model():
         if npz_file is not None:
             Model.load(npz_file, self)
         pass
+
+
+def load_models(ifile, models=None):
+	if models is None:
+		models = {}
+	for filename in ifile:
+		model = Model(filename)
+		models[model.label]
+	return models
 
 
 def ContinuousVelocity()
@@ -62,5 +75,5 @@ def ContinuousVelocity()
             raise RuntimeWarning("WARNING: Feature time is in the past of state time!")
     
     def predict(state, u, B, **kvargs):
-        
+        pass
     

@@ -22,12 +22,12 @@ class KalmanTracker(KalmanFilter):
             model.output_dim,
 			model.control_dim
             )
-        self.name = model.name
-        self.F = model.F
-        self.H = model.H
-        self.P = model.P
-        self.Q = model.Q
-        self.R = model.R
+		self.label = model.label
+        self.F = model.F.copy()
+        self.H = model.H.copy()
+        self.P = model.P.copy()
+        self.Q = model.Q.copy()
+        self.R = model.R.copy()
 		self.alpha = model.alpha
         self.x[:] = features[:model.input_dim]
         self.feature = feature
@@ -59,7 +59,7 @@ class KalmanTracker(KalmanFilter):
 		np.savez(
 			filename,
             type='KalmanTracker',
-			name=self.name,
+			label=self.label,
 			F=self.F,
 			H=self.H,
 			P=self.P,
