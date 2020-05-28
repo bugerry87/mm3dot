@@ -1,33 +1,9 @@
 
-# Buildin
-from glob import glob, iglob
 
 # Local
-from . import MM3DOT
-from .model import load_models
-
-
-def ifile(wildcards, sort=False, recursive=True):
-    def sglob(wc):
-        if sort:
-            return sorted(glob(wc, recursive=recursive))
-        else:
-            return iglob(wc, recursive=recursive)
-
-    if isinstance(wildcards, str):
-        for wc in sglob(wildcards):
-            yield wc
-    elif isinstance(wildcards, list):
-        if sort:
-            wildcards = sorted(wildcards)
-        for wc in wildcards:
-            if any(('*?[' in c) for c in wc):
-                for c in sglob(wc):
-                    yield c
-            else:
-                yield wc
-    else:
-        raise TypeError("wildecards must be string or list.")
+from mm3dot import MM3DOT
+from model import load_models
+from utils import *
 
 
 def init_arg_parser(parents=[]):
@@ -38,12 +14,12 @@ def init_arg_parser(parents=[]):
         )
     
     parser.add_argument(
-        '--data_root', '-X'
+        '--data_root', '-X',
         metavar='PATH',
         help='Path to the dataset root.'
         )
     parser.add_argument(
-        '--dataset', '-d'
+        '--dataset', '-d',
         metavar='NAME',
         choises=['argoverse', 'nuscenes', 'kitti'],
         help='Name of the dataset.'
@@ -80,12 +56,18 @@ def load_waymo(args):
 
 
 def load_argoverse(args):
-	raise NotImplementedError("ARGOVERSE is currently not supported")
+    raise NotImplementedError("ARGOVERSE is currently not supported")
 
 
 def load_fake(args):
-	from .datapi.fake import FakeLoader
-	return FakeLoader()
+    '''
+    Creates a FakeLoader simulating data of:
+    {x, y, z, yaw, l, w, h}
+    '''
+    from datapi.fake import FakeLoader
+    np.random.seed(0)
+    t = np.eye(3) + np.random.randn(3,3) * (1 - np.eye(3)) / 100
+    return FakeLoader(t, 100, 10)
 
 
 def main(args):
@@ -93,29 +75,29 @@ def main(args):
         dataloader = load_kitti(args)
     elif 'nuscenes' in args.dataset:
         dataloader = load_nusenes(args)
-	elif 'waymo' in args.dataset:
+    elif 'waymo' in args.dataset:
         dataloader = load_waymo(args)
     elif 'argoverse' in args.dataset:
         dataloader = load_argoverse(args)
-	elif 'fake' in args.dataset:
+    elif 'fake' in args.dataset:
         dataloader = load_fake(args)
     else:
         raise ValueError("ERROR: Dataset '{}' unknown.".format(args.dataset))
-	
-	models = load_models(ifile(args.model))
-	mm3dot = MM3DOT(models)
-	
-	for state in mm3dot.run(dataloader):
-		if 'SPAWN' in state:
-			pass
-		elif 'PREDICT' in state:
-			pass
-		elif 'UPDATE' in state:
-			pass
-		elif 'DROP' in state:
-			pass
-		else:
-			pass
+    
+    models = load_models(ifile(args.model))
+    mm3dot = MM3DOT(models)
+    
+    for state in mm3dot.run(dataloader):
+        if 'SPAWN' in state:
+            pass
+        elif 'PREDICT' in state:
+            pass
+        elif 'UPDATE' in state:
+            pass
+        elif 'DROP' in state:
+            pass
+        else:
+            pass
     pass
 
 
