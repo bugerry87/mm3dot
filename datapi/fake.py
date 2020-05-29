@@ -15,13 +15,13 @@ def init_fake_loader_parser(parents=[]):
 		parents=parents,
 		description='Arguments for a FakeLoader'
 		)
-	parser.add_argument('--x_dim', type=int, metavar='INT', default=2)
-	parser.add_argument('--z_dim', type=int, metavar='INT', default=1)
-	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0))
-	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(1))
-	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='TUPLE', default=())
-	parser.add_argument('--noise', type=float, metavar='FLOAT', default=0.1)
-	parser.add_argument('--samples', type=int, metavar='INT', default=10)
+	parser.add_argument('--x_dim', type=int, metavar='INT', default=6)
+	parser.add_argument('--z_dim', type=int, metavar='INT', default=2)
+	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1))
+	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(2,3))
+	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='TUPLE', default=(4,5))
+	parser.add_argument('--noise', type=float, nargs='*', metavar='FLOAT', default=(1))
+	parser.add_argument('--samples', type=int, metavar='INT', default=100)
 	parser.add_argument('--framesize', type=int, metavar='INT', default=4)
 	parser.add_argument('--seed', type=int, metavar='INT', default=0)
 	parser.add_argument('--labels', type=str, metavar='STR', nargs='*', default=None)
@@ -66,8 +66,12 @@ class FakeLoader():
 				default=['1'...'n']
 		'''
 		self.transition = np.eye(x_dim)
-		self.transition[pos_idx, vel_idx] = 0.1
-		self.transition[vel_idx, acl_idx] = 0.01
+		if vel_idx is not None:
+			self.transition[pos_idx, vel_idx] = 1
+			self.transition[vel_idx, vel_idx] = 1
+		if acl_idx is not None:
+			self.transition[vel_idx, acl_idx] = 1
+			self.transition[acl_idx, acl_idx] = 1
 		self.z_dim = z_dim
 		self.noise = noise
 		self.samples = samples
@@ -97,12 +101,14 @@ class FakeLoader():
 		K = len(self.labels)
 		np.random.seed(self.seed)
 		labels = [self.labels[i] for i in np.random.randint(0, K, K)]
-		data = np.random.randn(N,M) * 100
+		data = np.zeros((N,M))
+		noise = np.random.randn(N,M) * self.noise
+		data[:,:self.z_dim] = np.random.randn(N,self.z_dim) * 100
 		for sample in range(self.samples):
 			np.random.seed(self.seed + sample)
-			noise = np.random.randn(N,M) * self.noise
-			data = (data + noise) @ self.transition
-			yield Features(labels, data)
+			noise += np.random.randn(N,M) * self.noise
+			data += noise @ self.transition
+			yield Features(labels, data[:,:self.z_dim])
 		pass
 	
 	@property
@@ -114,13 +120,10 @@ class FakeLoader():
 
 
 # Test
-if __name__ == '__main__':
-	np.random.seed(0)
-	t = np.eye(3) + np.random.randn(3,3) * (1 - np.eye(3)) / 100
-	print("\nTransition Matrix:")
-	print(t)
-	
+if __name__ == '__main__':	
 	fakeloader = FakeLoader()
+	print("\nTransition Matrix:")
+	print(fakeloader.transition)
 	
 	print("\nSize of the FakeLoader", len(fakeloader))	
 	print("\nIterate the FakeLoader:")

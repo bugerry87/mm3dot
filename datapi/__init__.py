@@ -17,7 +17,7 @@ class Features():
 			data: <np.ndarray(float)> Numerical data!
 		'''
 		assert(len(labels) == len(data))
-		self.labels = labels
+		self.labels = np.array(labels)
 		self.data = data
 		self.describtion = describtion
 		pass
@@ -38,13 +38,13 @@ class Features():
 	def __getitem__(self, slc_n, slc_m=None):
 		if isinstance(slc_n, str):
 			if slc_n in self.labels:
-				slc_n = self.labels.index(slc_n)
+				slc_n = self.labels.tolist().index(slc_n)
 			else:
 				raise KeyError("ERROR: Label '{}' does not exist!".format(slc_n))
 		if slc_m is None:
-			return self.data[slc_n]
+			return self.labels[slc_n], self.data[slc_n]
 		else:
-			return self.data[slc_n, slc_m]
+			return self.labels[slc_n], self.data[slc_n, slc_m]
 	
 	@property
 	def shape(self):

@@ -5,22 +5,21 @@ from numba import jit
 import numpy as np
 
 @jit
-def inv_cov(H, P, R):
+def S_cov(H, P, R):
 	return np.linalg.inv(H @ P @ H.T + R)
 
 
-def mahalanobis(a, b, V, **kargs):
-	#@jit
-	def do_jit(a, b, V):
+def mahalanobis(a, b, S, **kargs):
+	@jit
+	def do_jit(a, b, S):
 		N, M = len(a), len(b)
-		A = np.repmat(a, M)
-		c = np.empty((N,M))
 		d = np.empty((N,M))
 		for n in range(N):
-			c[n] = a[n] - b[m]
-			d[n] = c[n] @ V[n]
-		return d * c.T
-	return do_jit(a, b, V)
+			for m in range(M):
+				c = a[n] - b[m]
+				d[n,m] = c @ S[n] @ c.T
+		return d
+	return do_jit(a, b, S)
 	
 
 def greedy_threshold(cost, gth=0.1, **kargs):

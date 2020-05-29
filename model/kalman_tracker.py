@@ -28,9 +28,9 @@ class KalmanTracker(KalmanFilter):
 		self.label = model.label
 		self.F = model.F.copy() if 'F' in model else np.eye(model.x_dim)
 		self.H = model.H.copy() if 'H' in model else np.eye(model.z_dim, model.x_dim)
-		self.P = model.P.copy() if 'P' in model else np.eye(model.x_dim) * 1000
+		self.P = model.P.copy() if 'P' in model else np.eye(model.x_dim)
 		self.Q = model.Q.copy() if 'Q' in model else np.eye(model.x_dim)
-		self.R = model.R.copy() if 'R' in model else np.eye(model.x_dim)
+		self.R = model.R.copy() if 'R' in model else np.eye(model.z_dim)
 		self.alpha = model.alpha if 'alpha' in model else 1.0
 		self.x[:len(self.z)] = feature[:len(self.z)][:,None]
 		self.feature = feature

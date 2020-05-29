@@ -15,10 +15,10 @@ def init_constant_velocity_parser(parents=[]):
 		parents=parents,
 		description='Arguments for a Constant Velocity model'
 		)
-	parser.add_argument('--x_dim', type=int, metavar='INT', default=2)
+	parser.add_argument('--x_dim', type=int, metavar='INT', default=4)
 	parser.add_argument('--z_dim', type=int, metavar='INT', default=2)
-	parser.add_argument('--pos_idx', type=int, metavar='INT', nargs='*', default=(0))
-	parser.add_argument('--vel_idx', type=int, metavar='INT', nargs='*', default=(1))
+	parser.add_argument('--pos_idx', type=int, metavar='INT', nargs='*', default=(0,1))
+	parser.add_argument('--vel_idx', type=int, metavar='INT', nargs='*', default=(2,3))
 	parser.add_argument('--template', type=str, metavar='STRING', default='KalmanTracker')
 	return parser
 
@@ -46,6 +46,10 @@ def constant_velocity(
 		model.F = np.eye(x_dim)
 		model.F[pos_idx, vel_idx] = 1
 		model.H = np.eye(z_dim, x_dim)
+		model.P = np.eye(x_dim) * 1000
+		model.P[z_dim:] *= 10
+		model.Q = np.eye(x_dim)
+		model.Q[z_dim:] *= 0.01
 		model.type = template
 		return model
 	

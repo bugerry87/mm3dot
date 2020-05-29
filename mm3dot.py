@@ -10,7 +10,7 @@ from model import TEMPLATES
 class MM3DOT():
 	def __init__(self, models,
 			dist_func=spatial.mahalanobis,
-			assign_func=spatial.greedy_threshold,
+			assign_func=spatial.hungarian,
 			**kwargs
 		):
 		self.__trk_id_cntr__ = 0
@@ -29,6 +29,9 @@ class MM3DOT():
 	
 	def __contains__(self, idx):
 		return idx in self.trackers
+	
+	def __iter__(self):
+		return iter(self.trackers.items())
 	
 	def spawn_trackers(self, detections, **kwargs):
 		for label, detection in detections:
@@ -59,25 +62,27 @@ class MM3DOT():
 		track_ids = np.empty(N)
 		for i, (idx, tracker) in enumerate(self.trackers.items()):
 			track_features[i] = tracker.feature
-			track_covars[i] = spatial.inv_cov(tracker.H, tracker.P, tracker.R)
+			track_covars[i] = tracker.SI
 			track_ids[i] = idx
 		cost = self.dist_func(track_features, detections.data, track_covars, **kwargs)
-		print(cost)
 		(trk_id, det_id), trkm, detm = self.assign_func(cost, **kwargs)
-		return (track_ids[trk_id], detections[det_id]), track_ids[~trkm], detections[~detm]
+		return (track_ids[trk_id], *detections[det_id]), track_ids[~trkm], detections[~detm]
 		
 	def update(self, detections, matches, lost, unmatched, **kwargs):
 		# update matched trackers
 		self.frame_counter += 1
-		for trk_id, detection in zip(*matches):
-			self.tracker[trk_id].lost = 0
-			self.tracker[trk_id].age += 1
-			self.tracker[trk_id].update(detection, **kwargs)
+		for trk_id, label, detection in zip(*matches):
+			if self.trackers[trk_id].label != label:
+				self.trackers[trk_id].label = label
+				print("WARNING: Label change!")
+			self.trackers[trk_id].lost = 0
+			self.trackers[trk_id].age += 1
+			self.trackers[trk_id].update(detection, **kwargs)
 		# mark unmatched trackers
 		for trk_id in lost:
-			self.tracker[trk_id].lost += 1
+			self.trackers[trk_id].lost += 1
 		# spawn trackers for unmatched detections
-		self.spawn_trackers(unmatched)
+		self.spawn_trackers(zip(*unmatched))
 		return self
 	
 	def drop_trackers(self, lost_hold = 10, **kwargs):
@@ -102,5 +107,5 @@ class MM3DOT():
 			yield 'UPDATE'
 			self.drop_trackers(**kwargs)
 			yield 'DROP'
-			
+		yield 'TERMINATE'	
 			
