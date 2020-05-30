@@ -1,5 +1,5 @@
-'''
-'''
+"""
+"""
 # Build In
 from argparse import ArgumentParser
 
@@ -7,7 +7,8 @@ from argparse import ArgumentParser
 import numpy as np
 
 # Local
-from . import Features
+if __name__ != '__main__':	
+	from . import Features
 
 
 def init_fake_loader_parser(parents=[]):
@@ -20,7 +21,7 @@ def init_fake_loader_parser(parents=[]):
 	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1))
 	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(2,3))
 	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='TUPLE', default=(4,5))
-	parser.add_argument('--noise', type=float, nargs='*', metavar='FLOAT', default=(1))
+	parser.add_argument('--noise', type=float, nargs='*', metavar='FLOAT', default=1)
 	parser.add_argument('--samples', type=int, metavar='INT', default=100)
 	parser.add_argument('--framesize', type=int, metavar='INT', default=4)
 	parser.add_argument('--seed', type=int, metavar='INT', default=0)
@@ -29,17 +30,17 @@ def init_fake_loader_parser(parents=[]):
 
 
 class FakeLoader():
-	'''
+	"""
 	FakeLoader, an iterable object generating fake data for testing.
 	It simulates a kalman like prediction but with noise.
 	The FakeLoader can simulate upto constant acceleration models.
 	(incl. constant velocity model)
-	'''
+	"""
 	def __init__(self,
 		x_dim=2,
 		z_dim=1,
-		pos_idx=(0),
-		vel_idx=(1),
+		pos_idx=(0,),
+		vel_idx=(1,),
 		acl_idx=(),
 		noise=0.1,
 		samples=10,
@@ -48,7 +49,7 @@ class FakeLoader():
 		labels=None,
 		**kwargs
 		):
-		'''
+		"""
 		Initialize the FakeLoader
 		
 		Args:
@@ -64,38 +65,49 @@ class FakeLoader():
 			seed <int>: Seed for pseudo random.
 			labels <list(str)>: A list of string labels.
 				default=['1'...'n']
-		'''
-		self.transition = np.eye(x_dim)
-		if vel_idx is not None:
-			self.transition[pos_idx, vel_idx] = 1
-			self.transition[vel_idx, vel_idx] = 1
-		if acl_idx is not None:
-			self.transition[vel_idx, acl_idx] = 1
-			self.transition[acl_idx, acl_idx] = 1
+		"""
 		self.z_dim = z_dim
 		self.noise = noise
 		self.samples = samples
 		self.framesize = framesize
 		self.seed = seed
+		self.pos_idx = pos_idx if isinstance(pos_idx, (tuple, list)) else (pos_idx,)
+		self.vel_idx = vel_idx if isinstance(vel_idx, (tuple, list)) else (vel_idx,)
+		self.acl_idx = acl_idx if isinstance(acl_idx, (tuple, list)) else (acl_idx,)
+		
+		self.transition = np.eye(x_dim)
+		if vel_idx is not None:
+			self.transition[self.pos_idx, self.vel_idx] = 1
+			self.transition[self.vel_idx, self.vel_idx] = 1
+		if acl_idx is not None:
+			self.transition[self.vel_idx, self.acl_idx] = 1
+			self.transition[self.acl_idx, self.acl_idx] = 1
+		
 		self.labels = [str(i) for i in range(framesize)] if labels is None else labels
-		self.describtion = {'pos_idx':pos_idx, 'vel_idx':vel_idx, 'acl_idx':acl_idx}
+		self.description = {
+			'pos_idx':self.pos_idx,
+			'vel_idx':self.vel_idx,
+			'acl_idx':self.acl_idx,
+			'x_dim':self.x_dim,
+			'z_dim':self.z_dim
+			}
 		pass
 	
 	def __len__(self):
-		'''
+		"""
 		Returns the number of samples in the dataloader.
 		
 		Returns: <int>
-		'''
+		"""
 		return self.samples
 	
 	def __iter__(self):
-		'''
+		"""
 		Returns a generator of fake data.
 		
 		Yields:
 			fakedata <Features>: The generated fake data.
-		'''
+		"""
 		N = self.framesize
 		M = self.x_dim
 		K = len(self.labels)
@@ -113,14 +125,15 @@ class FakeLoader():
 	
 	@property
 	def x_dim(self):
-		'''
+		"""
 		Returns the state size (x_dim)
-		'''
+		"""
 		return len(self.transition)
 
 
 # Test
-if __name__ == '__main__':	
+if __name__ == '__main__':
+	from __init__ import Features
 	fakeloader = FakeLoader()
 	print("\nTransition Matrix:")
 	print(fakeloader.transition)

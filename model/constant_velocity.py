@@ -1,5 +1,5 @@
-'''
-'''
+"""
+"""
 # Build In
 from argparse import ArgumentParser
 
@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 import numpy as np
 
 # Local
-from . import Model, INITIALIZERS
+from . import Model, MOTION_MODELS
 
 
 def init_constant_velocity_parser(parents=[]):
@@ -23,41 +23,50 @@ def init_constant_velocity_parser(parents=[]):
 	return parser
 
 
-def constant_velocity(
-	parse=None,
-	**kwargs
-	):
-	'''
-	'''
-	def init(
-		x_dim=2,
-		z_dim=1,
-		pos_idx=(0),
-		vel_idx=(-1),
-		template='KalmanTracker',
-		label=None,
-		**kwargs
-		):
-		model = Model()
-		model.label = label
-		model.x_dim = x_dim
-		model.z_dim = z_dim
-		model.u_dim = 0
-		model.F = np.eye(x_dim)
-		model.F[pos_idx, vel_idx] = 1
-		model.H = np.eye(z_dim, x_dim)
-		model.P = np.eye(x_dim) * 1000
-		model.P[z_dim:] *= 10
-		model.Q = np.eye(x_dim)
-		model.Q[z_dim:] *= 0.01
-		model.type = template
-		return model
+class ConstantVelocity(Model):
+	"""
+	"""
+	def __init__(self, parse=None, **kwargs):
+		"""
+		"""
+		def parse_kwargs(
+				x_dim=2,
+				z_dim=1,
+				pos_idx=(0,),
+				vel_idx=(-1,),
+				prediction_model='KalmanTracker',
+				label=None,
+				**kwargs
+				):
+			self.label = label
+			self.x_dim = x_dim
+			self.z_dim = z_dim
+			self.u_dim = 0
+			self.F = np.eye(x_dim)
+			self.F[pos_idx, vel_idx] = 1
+			self.H = np.eye(z_dim, x_dim)
+			self.P = np.eye(x_dim) * 1000
+			self.P[z_dim:] *= 10
+			self.Q = np.eye(x_dim)
+			self.Q[z_dim:] *= 0.01
+			self.prediction_model = prediction_model
+			self.motion_model = 'ConstantVelocity'
+		
+		if parse is not None and len(parse):
+			parser = init_constant_velocity_parser()
+			args, _ = parser.parse_known_args(parse)
+			for k,v in kwargs.items():
+				args.__setattr__(k,v)
+			parse_kwargs(**args.__dict__)
+		else:
+			parse_kwargs(**kwargs)
+		#super().__init__(**kwargs)
 	
-	if parse is not None:
-		parser = init_constant_velocity_parser()
-		args, _ = parser.parse_known_args(parse)
-		return init(**args.__dict__, **kwargs)
-	else:
-		return init(**kwargs)
+	def update(self, model, feature, **kwargs):
+		return (None,)
+	
+	def predict(self, model, **kwargs):
+		return (None,)
+	
 
-INITIALIZERS['constant_velocity'] = constant_velocity
+MOTION_MODELS['ConstantVelocity'] = ConstantVelocity

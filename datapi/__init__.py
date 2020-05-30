@@ -15,6 +15,8 @@ class Features():
 		Args:
 			labels: <list(str)> The label names
 			data: <np.ndarray(float)> Numerical data!
+			describtion: <dict> Describes what the indices are represent, i.e.
+				{'pos_idx':(0,1,2), 'vel_idx':(-3,-2,-1)}
 		'''
 		assert(len(labels) == len(data))
 		self.labels = np.array(labels)

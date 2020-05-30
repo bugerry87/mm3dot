@@ -4,13 +4,14 @@ import numpy as np
 
 # Local
 import spatial as spatial
-from model import TEMPLATES
+from model import PREDICTION_MODELS
 
 
 class MM3DOT():
 	def __init__(self, models,
 			dist_func=spatial.mahalanobis,
 			assign_func=spatial.hungarian,
+			hold_lost=10,
 			**kwargs
 		):
 		self.__trk_id_cntr__ = 0
@@ -19,6 +20,7 @@ class MM3DOT():
 		self.assign_func = assign_func
 		self.trackers = {}
 		self.frame_counter = 0
+		self.hold_lost = hold_lost
 		pass
 	
 	def __len__(self):
@@ -37,12 +39,12 @@ class MM3DOT():
 		for label, detection in detections:
 			if label in self.models:
 				model = self.models[label]
-				if model.type in TEMPLATES:
-					model_type = TEMPLATES[model.type]
+				if model.prediction_model in PREDICTION_MODELS:
+					prediction_model = PREDICTION_MODELS[model.prediction_model]
 				else:
 					raise RuntimeWarning("Model type '{}' is not registered!".format(model.type))
 				self.__trk_id_cntr__ += 1
-				tracker = model_type(detection, model, **kwargs)
+				tracker = prediction_model(detection, model, **kwargs)
 				tracker.id = self.__trk_id_cntr__
 				tracker.age = 0
 				tracker.lost = 0
@@ -81,14 +83,19 @@ class MM3DOT():
 		# mark unmatched trackers
 		for trk_id in lost:
 			self.trackers[trk_id].lost += 1
+			self.trackers[trk_id].update(None, **kwargs)
 		# spawn trackers for unmatched detections
 		self.spawn_trackers(zip(*unmatched))
 		return self
 	
-	def drop_trackers(self, lost_hold = 10, **kwargs):
+	def drop_trackers(self, hold_lost=None, **kwargs):
+		self.hold_lost = hold_lost if hold_lost else self.hold_lost
+		victims = []
 		for k, tracker in self.trackers.items():
-			if hasattr(tracker, 'lost') and tracker.lost > lost_hold:
-				del self.trackers[k]
+			if tracker.lost > self.hold_lost:
+				victims.append(k)
+		for k in victims:
+			self.trackers[k]
 		return self
 
 	def run(self, dataloader, **kwargs):

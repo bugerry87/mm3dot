@@ -1,11 +1,19 @@
+
 # Local
 from mm3dot import MM3DOT
-from model import load_models, INITIALIZERS
+from model import load_models, MOTION_MODELS
 from utils import *
 
 # Extensions
 import model.constant_velocity
 import model.kalman_tracker
+
+try:
+	import matplotlib.pyplot as plt
+	from matplotlib.colors import hsv_to_rgb
+	from math import sin, pi
+except:
+	print("WARNING: In case of visualization matplotlib is required!")
 
 
 def init_arg_parser(parents=[]):
@@ -22,7 +30,7 @@ def init_arg_parser(parents=[]):
 	parser.add_argument(
 		'--dataset', '-d',
 		metavar='NAME',
-		choices=['argoverse', 'nuscenes', 'kitti', 'fake'],
+		choices=['argoverse', 'nuscenes', 'kitti', 'waymo', 'fake'],
 		default='fake',
 		help='Name of the dataset.'
 		)
@@ -32,13 +40,13 @@ def init_arg_parser(parents=[]):
 		nargs='*',
 		help='Wildcard to one or more model files.'
 		)
-	default = next(iter(INITIALIZERS.keys()), None)
+	default = next(iter(MOTION_MODELS.keys()), None)
 	parser.add_argument(
 		'--initializer', '-i',
-		metavar='MODEL',
-		choices=INITIALIZERS.keys(),
+		metavar='MOTION_MODEL',
+		choices=MOTION_MODELS.keys(),
 		default=default,
-		help='Initialize a new model. \n default={}'.format(default)
+		help='Initialize a new model based on a motion model. \n default={}'.format(default)
 		)
 	parser.add_argument(
 		'--output', '-Y',
@@ -63,6 +71,13 @@ def init_arg_parser(parents=[]):
 		const=True,
 		help='Text plot if provided'
 		)
+	parser.add_argument(
+		'--hold_lost',
+		type=int,
+		metavar='INT',
+		default=10,
+		help="Num of lost frames before a tracker gets dropped."
+		)
 	return parser
 
 
@@ -70,6 +85,24 @@ def print_state(model):
 	for trk_id, tracker in model:
 		print('Trk:', trk_id, tracker.x.flatten(), 'Det:', tracker.feature)
 	print()
+
+
+def plot_state(model, pos_idx=(0,1), vel_idx=(2,3)):
+	for trk_id, tracker in model:
+		cs = 1.0/len(model)
+		c1 = hsv_to_rgb([[sin(cs * trk_id), 1, 1]])
+		c2 = hsv_to_rgb([[sin(cs * trk_id), 1, 0.5]])
+		det = tracker.feature
+		state = tracker.x.flatten()
+		plt.scatter(*det[pos_idx,], c=c1)
+		plt.quiver(*state[(*pos_idx, *vel_idx),], color=c2)
+		print("VIZ:", state[(*pos_idx, *vel_idx),])
+	plt.pause(0.1)
+	plt.draw()
+
+
+def plot_show(*args):
+	plt.show()
 
 
 def load_kitti(args, unparsed):
@@ -81,7 +114,28 @@ def load_nusenes(args, unparsed):
 
 
 def load_waymo(args, unparsed):
-	raise NotImplementedError("WAYMO is currently not supported")
+	from datapi.waymo import WaymoLoader, init_waymo_loader_parser
+	parser = init_waymo_loader_parser()
+	kwargs, _ = parser.parse_known_args(unparsed)
+	waymoloader = WaymoLoader(**kwargs.__dict__)
+	pos_idx = waymoloader.pos_idx
+	vel_idx = waymoloader.vel_idx
+	
+	on_update = []
+	on_terminate = []
+	
+	if args.verbose:
+		on_update.append(print_state)
+	
+	if args.visualize:
+		on_update.append(plot_state)
+		on_terminate.append(lambda x: plot_show(x, pos_idx=pos_idx[:2], vel_idx=vel_idx[:2]))
+	
+	callbacks = {
+		'UPDATE': lambda x: [update(x) for update in on_update],
+		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate]
+		}
+	return waymoloader, callbacks
 
 
 def load_argoverse(args, unparsed):
@@ -90,39 +144,27 @@ def load_argoverse(args, unparsed):
 
 def load_fake(args, unparsed):
 	from datapi.fake import FakeLoader, init_fake_loader_parser
+	parser = init_fake_loader_parser()
+	kwargs, _ = parser.parse_known_args(unparsed)
+	fakeloader = FakeLoader(**kwargs.__dict__)
+	pos_idx = fakeloader.pos_idx
+	vel_idx = fakeloader.vel_idx
+	
 	on_update = []
+	on_terminate = []
 	
 	if args.verbose:
 		on_update.append(print_state)
 	
 	if args.visualize:
-		import matplotlib.pyplot as plt
-		from matplotlib.colors import hsv_to_rgb
-		from math import sin, pi
-		
-		def plot_state(model):
-			for trk_id, tracker in model:
-				cs = 1.0/len(model)
-				c1 = hsv_to_rgb([[sin(cs * trk_id), 1, 1]])
-				c2 = hsv_to_rgb([[sin(cs * trk_id), 1, 0.5]])
-				det = tracker.feature
-				state = tracker.x.flatten()
-				plt.scatter(*det[:2], c=c1)
-				plt.quiver(*state[:4], color=c2)
-			plt.pause(0.1)
-			plt.draw()
 		on_update.append(plot_state)
-		
-		def plot_show():
-			plt.show()
+		on_terminate.append(lambda x: plot_show(x, pos_idx=pos_idx[:2], vel_idx=vel_idx[:2]))
 	
-	parser = init_fake_loader_parser()
-	kwargs, _ = parser.parse_known_args(unparsed)
 	callbacks = {
 		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: plot_show()
+		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate]
 		}
-	return FakeLoader(**kwargs.__dict__), callbacks
+	return fakeloader, callbacks
 
 
 def main(args, unparsed):
@@ -143,13 +185,14 @@ def main(args, unparsed):
 	
 	if args.model:
 		models = load_models(ifile(args.model))
-	elif args.initializer in INITIALIZERS:
-		initializer = INITIALIZERS[args.initializer]
-		models = {label:initializer(parse=unparsed, label=label) for label in dataloader.labels}
+	elif args.initializer in MOTION_MODELS:
+		initializer = MOTION_MODELS[args.initializer]
+		description = dataloader.description
+		models = {label:initializer(parse=unparsed, label=label, **description) for label in dataloader.labels}
 	else:
 		raise ValueError("ERROR: Can't find any model! Please check --initializer or --model.")
 	
-	mm3dot = MM3DOT(models)
+	mm3dot = MM3DOT(models, **args.__dict__)
 	for state in mm3dot.run(dataloader):
 		if state in callbacks:
 			callbacks[state](mm3dot)

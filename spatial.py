@@ -31,6 +31,6 @@ def greedy_threshold(cost, gth=0.1, **kargs):
 
 def hungarian(cost, **kargs):
 	indices = linear_assignment(cost)
-	am = np.in1d(indices[0], range(cost.shape[0]))
-	bm = np.in1d(indices[1], range(cost.shape[1]))
+	am = np.in1d(range(cost.shape[0]), indices[0])
+	bm = np.in1d(range(cost.shape[1]), indices[1])
 	return indices, am, bm
