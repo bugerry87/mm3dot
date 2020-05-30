@@ -29,10 +29,14 @@ class KalmanTracker(KalmanFilter):
 		self.alpha = model.alpha if 'alpha' in model else 1.0
 		self.x[:len(self.z)] = feature[:len(self.z)][:,None]
 		self.feature = feature
+		
 		if 'motion_model' in model and model.motion_model is not None:
 			self.motion_model = MOTION_MODELS[model.motion_model](**kwargs)
 		else:
 			self.motion_model = None
+		
+		if self.motion_model is not None:
+			args = self.motion_model.spawn(self, **kwargs)
 		pass
 	
 	def predict(self, **kwargs):
@@ -51,13 +55,13 @@ class KalmanTracker(KalmanFilter):
 
 	def update(self, feature, **kwargs):
 		if self.motion_model is not None:
-			args = self.motion_model.update(self, feature, **kwargs)
+			feature, args = self.motion_model.update(self, feature, **kwargs)
 		else:
 			args = (
 				kwargs['R'] if 'R' in kwargs else None,
 				kwargs['H'] if 'H' in kwargs else None
 				)
-		n = len(args)
+		n = min(len(args),2)
 		super().update(feature, *args[:n])
 		if feature is not None:
 			self.feature = feature 

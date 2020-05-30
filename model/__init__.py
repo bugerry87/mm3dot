@@ -36,6 +36,15 @@ class Model():
 	
 	def __contains__(self, attr):
 		return attr in self.__dict__
+	
+	def spawn(self, model, **kwargs):
+		pass
+	
+	def update(self, model, feature, **kwargs):
+		return feature, ()
+	
+	def predict(self, model, **kwargs):
+		return ()
 
 
 def load_models(ifile, models=None, **kwargs):

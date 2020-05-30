@@ -2,27 +2,32 @@
 """
 # Build In
 from argparse import ArgumentParser
+from time import time, strftime
+import json
 
 # Installed
 import numpy as np
-from waymo_open_dataset.protos import metrics_pb2
+#from waymo_open_dataset import dataset_pb2, label_p2
+from waymo_open_dataset.protos import metrics_pb2, submission_pb2
 
 # Local
 if __name__ != '__main__':
-	from . import Features
+	from . import Features, yaw_to_xyz
 
 
-def init_waymo_loader_parser(parents=[]):
+def init_waymo_arg_parser(parents=[]):
 	parser = ArgumentParser(
 		parents=parents,
-		description='Arguments for a WaymoLoader'
+		description='Arguments for a Waymo lib'
 		)
-	parser.add_argument('--filename', metavar='PATH')
+	parser.add_argument('--metafile', metavar='JSON')
+	parser.add_argument('--inputfile', metavar='PATH')
+	parser.add_argument('--outputfile', metavar='PATH')
 	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1,2))
 	parser.add_argument('--shape_idx', type=int, nargs='*', metavar='TUPLE', default=(4,3,5))
-	parser.add_argument('--rot_idx', type=int, nargs='*', metavar='TUPLE', default=(6,))
-	parser.add_argument('--score_idx', type=int, nargs='*', metavar='TUPLE', default=(7,))
-	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(8,9,10))
+	parser.add_argument('--rot_idx', type=int, nargs='*', metavar='TUPLE', default=(6,7,8))
+	parser.add_argument('--score_idx', type=int, nargs='*', metavar='TUPLE', default=(9,))
+	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(10,11,12))
 	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='TUPLE', default=())
 	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.9)
 	return parser
@@ -31,21 +36,21 @@ def init_waymo_loader_parser(parents=[]):
 class WaymoLoader():
 	"""
 	"""
-	def __init__(self, filename,
+	def __init__(self, inputfile,
 		score_filter=0.0,
 		limit_frames=None,
 		pos_idx=(0,1,2),
 		shape_idx=(4,3,5),
-		rot_idx=(6,),
-		score_idx=(7,),
-		vel_idx=(8,9,10),
+		rot_idx=(6,7,8),
+		score_idx=(9,),
+		vel_idx=(10,11,12),
 		acl_idx=(),
 		**kwargs
 		):
 		"""
 		"""
 		self.metrics = metrics_pb2.Objects()
-		with open(filename, 'rb') as f:
+		with open(inputfile, 'rb') as f:
 			self.metrics.ParseFromString(bytearray(f.read()))
 		
 		self.limit_frames = limit_frames
@@ -93,15 +98,16 @@ class WaymoLoader():
 					features = self.metrics_to_features(frame_samples)
 					features.frame_num = frame_num
 					if context and context != features.context:
-						print("Context changed!", context, features.context)
-						exit()
+						yield None #for reset!
 					context = features.context
+					self.context = context
 					yield features
 				frame_samples.clear()
 				if self.limit_frames and frame_num >= self.limit_frames:
 					break
 			frame_samples.append(object)
 			timestamp = object.frame_timestamp_micros
+			self.timestamp = timestamp
 		if len(frame_samples):
 			features = self.metrics_to_features(frame_samples)
 			features.frame_num = frame_num
@@ -115,7 +121,7 @@ class WaymoLoader():
 			box = object.object.box
 			data[i, self.pos_idx] = (box.center_x, box.center_y, box.center_z)[:len(self.pos_idx)]
 			data[i, self.shape_idx] = (box.width, box.length, box.height)[:len(self.shape_idx)]
-			data[i, self.rot_idx] = (box.heading,)[:len(self.rot_idx)]
+			data[i, self.rot_idx] = yaw_to_xyz(box.heading)
 			data[i, self.score_idx] = (object.score,)[:len(self.score_idx)]
 			
 		features = Features(labels, data, self.description)
@@ -128,81 +134,59 @@ class WaymoMergeLoader():
 	pass
 
 
-def record(predictions, record=None):
+class WaymoRecorder():
 	"""
-	Records predictions to a waymo like record file.
+	"""
+	def __init__(self,
+		outputfile=None,
+		metafile=None,
+		**kwargs):
+		"""
+		"""
+		self.record = submission_pb2.Submission()
+		self.outputfile = outputfile
+		if metafile:
+			with open(metafile, 'r') as f:
+				meta = json.load(f)
+			print(meta)
+			for k,v in meta.items():
+				if hasattr(self.record, k):
+					setattr(self.record, k, v)
+		
+		for k,v in kwargs:
+			if hasattr(self.record, k):
+				setattr(self.record, k, v)
+		pass
 	
-	Args:
-		predictions: An object with detection, tracking or prediction information.
-		record: An waymo recorder object.
-	
-	Returns:
-		record: The record object itself.
-	"""
-	if record is None:
-		record = metrics_pb2.Objects()
-	
-	return record
+	def record(object):
+		"""
+		Records features to a waymo like record file.
+		
+		Args:
+			object: An dict with detection, tracking or prediction information.
+		
+		Returns:
+			record: The record object itself.
+		"""
+		record.inference_results.append(object)
+		return record
 
 
-def save_record(record, filename):
-	with open(filename, 'wb') as f:
-		f.write(record.SerializeToString())
-	pass
-
-
-def create_pd_file():
-	"""
-	Creates a prediction objects file.
-	"""
-	objects = metrics_pb2.Objects()
-
-	o = metrics_pb2.Object()
-	# The following 3 fields are used to uniquely identify a frame a prediction
-	# is predicted at. Make sure you set them to values exactly the same as what
-	# we provided in the raw data. Otherwise your prediction is considered as a
-	# false negative.
-	o.context_name = ('context_name for the prediction. See Frame::context::name '
-										'in	dataset.proto.')
-	# The frame timestamp for the prediction. See Frame::timestamp_micros in
-	# dataset.proto.
-	invalid_ts = -1
-	o.frame_timestamp_micros = invalid_ts
-	# This is only needed for 2D detection or tracking tasks.
-	# Set it to the camera name the prediction is for.
-	o.camera_name = dataset_pb2.CameraName.UNKNOWN 
-
-	# Populating box and score.
-	box = label_pb2.Label.Box()
-	box.center_x = 0
-	box.center_y = 0
-	box.center_z = 0
-	box.length = 0
-	box.width = 0
-	box.height = 0
-	box.heading = 0
-	o.object.box.CopyFrom(box)
-	# This must be within [0.0, 1.0]. It is better to filter those boxes with
-	# small scores to speed up metrics computation.
-	o.score = 0.5
-	# For tracking, this must be set and it must be unique for each tracked
-	# sequence.
-	o.object.id = 'unique object tracking ID'
-	# Use correct type.
-	o.object.type = label_pb2.Label.TYPE_PEDESTRIAN
-
-	objects.objects.append(o)
-
-	# Add more objects. Note that a reasonable detector should limit its maximum
-	# number of boxes predicted per frame. A reasonable value is around 400. A
-	# huge number of boxes can slow down metrics computation.
-
-	# Write objects to a file.
+	def save(self, outputfile=None):
+		"""
+		"""
+		if outputfile:
+			self.outputfile = outputfile
+		if self.outputfile is None:
+			self.outputfile = strftime("%Y-%m-%d_%H-%M-%S", time())
+		with open(outputfile, 'wb') as f:
+			f.write(self.record.SerializeToString())
+		pass
 	
 
 # Test WaymoLoader
 if __name__ == '__main__':
-	from __init__ import Features
+	from __init__ import Features, yaw_to_xyz
 	filename = '/home/gerald/datasets/waymo/results/PointPillars/detection_3d_vehicle_detection_test.bin'
 	waymoloader = WaymoLoader(filename, limit_frames=100, score_filter=0.9)
 	

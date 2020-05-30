@@ -5,13 +5,14 @@ from model import load_models, MOTION_MODELS
 from utils import *
 
 # Extensions
-import model.constant_velocity
+import model.constant_accumulation
 import model.kalman_tracker
 
 try:
 	import matplotlib.pyplot as plt
 	from matplotlib.colors import hsv_to_rgb
-	from math import sin, pi
+	from collections import deque
+	import numpy as np
 except:
 	print("WARNING: In case of visualization matplotlib is required!")
 
@@ -88,21 +89,57 @@ def print_state(model):
 
 
 def plot_state(model, pos_idx=(0,1), vel_idx=(2,3)):
+	pos_idx = pos_idx[:2]
+	vel_idx = vel_idx[:2]
 	for trk_id, tracker in model:
-		cs = 1.0/len(model)
-		c1 = hsv_to_rgb([[sin(cs * trk_id), 1, 1]])
-		c2 = hsv_to_rgb([[sin(cs * trk_id), 1, 0.5]])
-		det = tracker.feature
+		if 'history' not in tracker.__dict__:
+			tracker.history = deque()
+		cs = np.abs(np.sin(0.1 * trk_id))
+		c1 = hsv_to_rgb((cs, 1, 1))
+		c2 = hsv_to_rgb((cs, 1, 0.5))
+		det = tracker.feature[pos_idx,]
 		state = tracker.x.flatten()
-		plt.scatter(*det[pos_idx,], c=c1)
-		plt.quiver(*state[(*pos_idx, *vel_idx),], color=c2)
-		print("VIZ:", state[(*pos_idx, *vel_idx),])
+		pos = state[pos_idx,]
+		vel = state[vel_idx,]
+		
+		if len(tracker.history) > 10:
+			tracker.history.rotate(-1)
+			scatter, quiver = tracker.history[0]
+			scatter.set_offsets(det)
+			scatter.set_color(c1)
+			if np.any(vel):
+				if quiver:
+					quiver.set_offsets(pos)
+					quiver.set_UVC(*vel)
+					quiver.set_color(c2)
+				else:
+					quiver = plt.quiver(*pos, *vel, color=[c2], angles='xy', scale_units='xy', scale=1)
+					tracker.history[0] = (scatter, quiver)
+			elif quiver:
+				quiver.remove()
+				tracker.history[0] = (scatter, None)
+		else:
+			scatter = plt.scatter(*det, c=[c1])
+			if np.any(vel):
+				quiver = plt.quiver(*pos, *vel, color=[c2], angles='xy', scale_units='xy', scale=1)
+			else:
+				quiver = None
+			tracker.history.append((scatter, quiver))
 	plt.pause(0.1)
 	plt.draw()
 
 
 def plot_show(*args):
 	plt.show()
+
+
+def plot_reset(*args):
+	plt.clf()
+
+
+def reset(model):
+	print("\n_______________MODEL_RESET_______________\n")
+	model.reset()
 
 
 def load_kitti(args, unparsed):
@@ -114,26 +151,57 @@ def load_nusenes(args, unparsed):
 
 
 def load_waymo(args, unparsed):
-	from datapi.waymo import WaymoLoader, init_waymo_loader_parser
-	parser = init_waymo_loader_parser()
+	from datapi.waymo import WaymoLoader, WaymoRecorder, init_waymo_arg_parser
+	from waymo_open_dataset.protos import metrics_pb2
+	from datapi import xyz_to_yaw
+	
+	parser = init_waymo_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
 	waymoloader = WaymoLoader(**kwargs.__dict__)
-	pos_idx = waymoloader.pos_idx
-	vel_idx = waymoloader.vel_idx
+	waymorecorder = WaymoRecorder(**kwargs.__dict__)
+	
+	def waymo_record(model):
+		pos_idx = waymoloader.pos_idx
+		shape_idx = waymoloader.shape_idx
+		rot_idx = waymoloader.rot_idx
+		context = waymoloader.context
+		timestamp = waymoloader.timestamp
+		for trk_id, tracker in model:
+			object = metrics_pb2.Object()
+			object.context_name = context
+			object.frame_timestamp_micros = timestamp
+			#object.score = tracker.log_likelihood
+			object.object.id = str(trk_id)
+			object.object.type = tracker.label
+			object.object.box.center_x = tracker.x[pos_idx[0]]
+			object.object.box.center_y = tracker.x[pos_idx[1]]
+			object.object.box.center_z = tracker.x[pos_idx[2]]
+			object.object.box.length = tracker.x[shape_idx[0]]
+			object.object.box.width = tracker.x[shape_idx[1]]
+			object.object.box.height = tracker.x[shape_idx[3]]
+			object.object.box.heading = xyz_to_yaw(tracker.x[rot_idx])
+			waymorecorder.record(object)
 	
 	on_update = []
 	on_terminate = []
+	on_nodata = []
+	
+	on_nodata.append(reset)
+	on_update.append(waymo_record)
+	on_terminate.append(lambda x: waymorecorder.save())
 	
 	if args.verbose:
 		on_update.append(print_state)
 	
 	if args.visualize:
-		on_update.append(plot_state)
-		on_terminate.append(lambda x: plot_show(x, pos_idx=pos_idx[:2], vel_idx=vel_idx[:2]))
+		on_update.append(lambda x: plot_state(x, waymoloader.pos_idx, waymoloader.vel_idx))
+		on_terminate.append(plot_show)
+		on_nodata.append(plot_reset)
 	
 	callbacks = {
 		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate]
+		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
+		'NODATA': lambda x: [nodata(x) for nodata in on_nodata]
 		}
 	return waymoloader, callbacks
 
@@ -147,22 +215,23 @@ def load_fake(args, unparsed):
 	parser = init_fake_loader_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
 	fakeloader = FakeLoader(**kwargs.__dict__)
-	pos_idx = fakeloader.pos_idx
-	vel_idx = fakeloader.vel_idx
 	
 	on_update = []
 	on_terminate = []
 	
 	if args.verbose:
-		on_update.append(print_state)
+		#on_update.append(print_state)
+		pass
 	
 	if args.visualize:
-		on_update.append(plot_state)
-		on_terminate.append(lambda x: plot_show(x, pos_idx=pos_idx[:2], vel_idx=vel_idx[:2]))
+		on_update.append(lambda x: plot_state(x, fakeloader.pos_idx, fakeloader.vel_idx))
+		on_terminate.append(plot_show)
+		pass
 	
 	callbacks = {
 		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate]
+		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
+		'NODATA': reset
 		}
 	return fakeloader, callbacks
 

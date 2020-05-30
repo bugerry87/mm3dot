@@ -3,6 +3,20 @@
 import numpy as np
 
 
+def yaw_to_xyz(yaw):
+	x = np.cos(yaw)
+	y = np.sin(yaw)
+	z = 0.0
+	return x,y,z
+
+
+def xyz_to_yaw(x, y, z=0):
+	pi = np.where(x > 0.0, np.pi, -np.pi)
+	with np.errstate(divide='ignore', over='ignore'):
+		yaw = np.arctan(x / y) + (y < 0) * pi
+	return yaw
+
+
 class Features():
 	def __init__(self, 
 		labels:list,

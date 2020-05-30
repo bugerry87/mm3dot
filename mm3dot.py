@@ -24,7 +24,7 @@ class MM3DOT():
 		pass
 	
 	def __len__(self):
-		return len(self.trackers)
+		return len(self.trackers.keys())
 	
 	def __get__(self, idx):
 		return self.trackers[idx]
@@ -97,22 +97,34 @@ class MM3DOT():
 		for k in victims:
 			self.trackers[k]
 		return self
+	
+	def reset(self):
+		self.trackers.clear()
 
 	def run(self, dataloader, **kwargs):
 		data_iter = iter(dataloader)
-		detections = next(data_iter, None)
-		if detections is None:
-			raise RuntimeWarning("WARNING: No data!")
-		else:
-			self.spawn_trackers(detections, **kwargs)
-			yield 'SPAWN'
+		spawn = True
+			
 		for detections in data_iter:
-			self.predict(**kwargs)
-			yield 'PREDICT'
+			if detections is None:
+				yield 'NODATA'
+				spawn = True
+				continue
+			
+			if spawn:
+				self.spawn_trackers(detections, **kwargs)
+				spawn = False
+				yield 'SPAWN'
+				continue
+				
 			match_results = self.match(detections, **kwargs)
 			self.update(detections, *match_results, **kwargs)
 			yield 'UPDATE'
+			
 			self.drop_trackers(**kwargs)
 			yield 'DROP'
+			
+			self.predict(**kwargs)
+			yield 'PREDICT'
 		yield 'TERMINATE'	
 			

@@ -1,0 +1,11 @@
+{
+"task":4,
+"account_name":"baulig.eed07g@nctu.edu.tw",
+"unique_method_name":"mm3dot",
+"authors":"Gerald Baulig",
+"affiliation":"National Chiao Tung University (NCTU), Taiwan",
+"description":"Multi Model for 3D Object Tracking, inspired by Hsu-kuang Chiu's (et al.) 'Probabilistic 3D Multi-Object Tracking for Autonomous Driving' we employ Kalman Filters with individual trained hyper-parametes for each class. However, we include the score for data association and a rotation-vector instead of yaw. In this way, the KF will be less confused by range overflow of yaw. Furthermore, we assume that objects are more likely to move along their heading orientation.",
+"method_link":"https://github.com/bugerry87/mm3dot",
+"sensor_type":2,
+"latency_second":1.0
+}
