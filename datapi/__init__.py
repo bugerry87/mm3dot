@@ -19,8 +19,8 @@ def xyz_to_yaw(x, y, z=0):
 
 class Features():
 	def __init__(self, 
-		labels:list,
-		data:np.ndarray,
+		labels:list=[],
+		data:np.ndarray=np.empty(0),
 		describtion:dict=None
 		):
 		'''

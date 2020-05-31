@@ -2,12 +2,11 @@
 """
 # Build In
 from argparse import ArgumentParser
-from time import time, strftime
+from datetime import datetime
 import json
 
 # Installed
 import numpy as np
-#from waymo_open_dataset import dataset_pb2, label_p2
 from waymo_open_dataset.protos import metrics_pb2, submission_pb2
 
 # Local
@@ -131,7 +130,53 @@ class WaymoLoader():
 
 
 class WaymoMergeLoader():
-	pass
+	"""
+	"""
+	def __init__(self, ifile,
+		frame_merge=True,
+		**kwargs
+		):
+		"""
+		"""
+		self.frame_merge = frame_merge
+		self.loaders = [WaymoLoader(file, **kwargs) for file in ifile]
+		pass
+	
+	def __len__(self):
+		return np.min([len(L) for L in self.loaders])
+	
+	def __iter__(self):
+		if self.frame_merge:
+			timestamp = 0
+			context = None
+			loaders = [iter(loader) for loader in self.loaders]
+			current_frame = Features()
+			next_frame = Features()
+			has_next = True
+			while :
+				for loader in loaders:
+					features = next(loader, None)
+					if features:
+						has_next = True
+					else:
+						has_next = False
+						continue
+					
+					if timestamp and timestamp != features.timestamp:
+						yield Features(labels, np.vstack(data),self.description)
+						timestamp = features.timestamp
+						self.timestamp = timestamp
+						labels.clear()
+						data.clear()
+					if context and context != features.context:
+						
+					
+		else:
+			for loader in self.loaders:
+				for features in loader:
+					yield features
+		pass
+			
 
 
 class WaymoRecorder():
@@ -148,17 +193,24 @@ class WaymoRecorder():
 		if metafile:
 			with open(metafile, 'r') as f:
 				meta = json.load(f)
-			print(meta)
 			for k,v in meta.items():
 				if hasattr(self.record, k):
-					setattr(self.record, k, v)
+					if isinstance(v, list):
+						for value in v:
+							getattr(self.record, k).append(value)
+					else:
+						setattr(self.record, k, v)
 		
-		for k,v in kwargs:
+		for k,v in kwargs.items():
 			if hasattr(self.record, k):
-				setattr(self.record, k, v)
+				if isinstance(v, list):
+					for value in v:
+						getattr(self.record, k).append(value)
+				else:
+					setattr(self.record, k, v)
 		pass
 	
-	def record(object):
+	def append(self, object):
 		"""
 		Records features to a waymo like record file.
 		
@@ -168,20 +220,20 @@ class WaymoRecorder():
 		Returns:
 			record: The record object itself.
 		"""
-		record.inference_results.append(object)
-		return record
+		self.record.inference_results.objects.append(object)
+		return self.record
 
 
 	def save(self, outputfile=None):
 		"""
 		"""
 		if outputfile:
-			self.outputfile = outputfile
-		if self.outputfile is None:
-			self.outputfile = strftime("%Y-%m-%d_%H-%M-%S", time())
-		with open(outputfile, 'wb') as f:
+			outputfile = self.outputfile
+		if outputfile is None:
+			outputfile = datetime.now().strftime("results_%Y-%m-%d_%H-%M-%S.bin")
+		with open(self.outputfile, 'wb') as f:
 			f.write(self.record.SerializeToString())
-		pass
+		return outputfile
 	
 
 # Test WaymoLoader
