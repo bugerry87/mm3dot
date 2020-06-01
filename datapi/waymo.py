@@ -3,6 +3,7 @@
 # Build In
 from argparse import ArgumentParser
 from datetime import datetime
+from glob import iglob
 import json
 
 # Installed
@@ -11,7 +12,7 @@ from waymo_open_dataset.protos import metrics_pb2, submission_pb2
 
 # Local
 if __name__ != '__main__':
-	from . import Features, yaw_to_xyz
+	from . import Frame, yaw_to_xyz
 
 
 def init_waymo_arg_parser(parents=[]):
@@ -21,7 +22,7 @@ def init_waymo_arg_parser(parents=[]):
 		)
 	parser.add_argument('--metafile', metavar='JSON')
 	parser.add_argument('--inputfile', metavar='PATH')
-	parser.add_argument('--outputfile', metavar='PATH')
+	parser.add_argument('--outputfile', metavar='PATH', default='')
 	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1,2))
 	parser.add_argument('--shape_idx', type=int, nargs='*', metavar='TUPLE', default=(4,3,5))
 	parser.add_argument('--rot_idx', type=int, nargs='*', metavar='TUPLE', default=(6,7,8))
@@ -91,29 +92,34 @@ class WaymoLoader():
 		for object in self.metrics.objects:
 			if object.score <= self.score_filter:
 				continue
-			if timestamp and timestamp != object.frame_timestamp_micros:
+			elif context is None:
+				self.context = context = object.context_name
+			elif context != object.context_name:
+				self.context = context = object.context_name
+				yield None #for reset!
+			
+			if timestamp is None:
+				self.timestamp = timestamp = object.frame_timestamp_micros
+			elif timestamp != object.frame_timestamp_micros:
 				frame_num += 1
 				if len(frame_samples):
-					features = self.metrics_to_features(frame_samples)
-					features.frame_num = frame_num
-					if context and context != features.context:
-						yield None #for reset!
-					context = features.context
-					self.context = context
-					yield features
+					frame = self.metrics_to_frame(frame_samples)
+					frame.frame_num = frame_num
+					yield frame
+				self.timestamp = timestamp = object.frame_timestamp_micros
 				frame_samples.clear()
 				if self.limit_frames and frame_num >= self.limit_frames:
 					break
 			frame_samples.append(object)
-			timestamp = object.frame_timestamp_micros
-			self.timestamp = timestamp
 		if len(frame_samples):
-			features = self.metrics_to_features(frame_samples)
-			features.frame_num = frame_num
-			yield features
+			frame = self.metrics_to_frame(frame_samples)
+			frame.frame_num = frame_num
+			self.context = frame.context
+			self.timestamp = frame.timestamp
+			yield frame
 		pass
 	
-	def metrics_to_features(self, metrics:list):
+	def metrics_to_frame(self, metrics:list):
 		data = np.empty((len(metrics), self.z_dim))
 		labels = [object.object.type for object in metrics]
 		for i, object in enumerate(metrics):
@@ -123,58 +129,93 @@ class WaymoLoader():
 			data[i, self.rot_idx] = yaw_to_xyz(box.heading)
 			data[i, self.score_idx] = (object.score,)[:len(self.score_idx)]
 			
-		features = Features(labels, data, self.description)
-		features.timestamp = object.frame_timestamp_micros
-		features.context = object.context_name
-		return features
+		frame = Frame(labels, data, self.description)
+		frame.timestamp = object.frame_timestamp_micros
+		frame.context = object.context_name
+		return frame
 
 
 class WaymoMergeLoader():
 	"""
 	"""
-	def __init__(self, ifile,
-		frame_merge=True,
+	def __init__(self, inputfile,
+		frame_merge=False,
 		**kwargs
 		):
 		"""
 		"""
 		self.frame_merge = frame_merge
-		self.loaders = [WaymoLoader(file, **kwargs) for file in ifile]
+		self.loaders = [WaymoLoader(file, **kwargs) for file in iglob(inputfile)]
+		self.description = self.loaders[0].description
+		self.labels = self.loaders[0].labels
+		for k,v in self.description.items():
+			self.__setattr__(k, v)
 		pass
 	
 	def __len__(self):
 		return np.min([len(L) for L in self.loaders])
 	
+	def merge_frame(self):
+		timestamps = []
+		frames = []
+		labels = []
+		data = []
+		timestamp = 0
+		context = None
+		loaders = [iter(loader) for loader in self.loaders]
+		has_next = True
+		while has_next:
+			has_next = False
+			for loader in loaders:
+				frame = next(loader, None)
+				if frame:
+					has_next = True
+				else:
+					continue
+				timestamps.append(frame.timestamp)
+				frames.append(frame)
+				pass
+			if has_next is False:
+				continue
+			
+			indices = np.argsort(timestamps)
+			for i in indices:
+				frame = frames[i]
+				if context is None:
+					self.context = context = frame.context
+				elif context != frame.context:
+					yield None # for reset
+				
+				if timestamp is None:
+					self.timestamp = timestamp = frame.timestamp
+				elif timestamp != frame.timestamp:
+					yield Frame(labels, np.vstack(data), loader.description)
+					self.timestamp = timestamp = frame.timestamp
+					labels.clear()
+					data.clear()
+				labels += frame.labels
+				data.append(frame.data)
+			if len(labels):
+				self.timestamp = frame.timestamp
+				self.context = frame.context
+				yield Frame(labels, np.vstack(data), loader.description)
+			timestamps.clear()
+			frames.clear()
+		pass
+	
+	def merge_sequential(self):
+		for loader in self.loaders:
+			for frame in loader:
+				if frame:
+					self.timestamp = frame.timestamp
+					self.context = frame.context
+				yield frame
+	
 	def __iter__(self):
 		if self.frame_merge:
-			timestamp = 0
-			context = None
-			loaders = [iter(loader) for loader in self.loaders]
-			current_frame = Features()
-			next_frame = Features()
-			has_next = True
-			while :
-				for loader in loaders:
-					features = next(loader, None)
-					if features:
-						has_next = True
-					else:
-						has_next = False
-						continue
-					
-					if timestamp and timestamp != features.timestamp:
-						yield Features(labels, np.vstack(data),self.description)
-						timestamp = features.timestamp
-						self.timestamp = timestamp
-						labels.clear()
-						data.clear()
-					if context and context != features.context:
-						
-					
+			return self.merge_frame()				
 		else:
-			for loader in self.loaders:
-				for features in loader:
-					yield features
+			return self.merge_sequential()
 		pass
 			
 
@@ -200,6 +241,9 @@ class WaymoRecorder():
 							getattr(self.record, k).append(value)
 					else:
 						setattr(self.record, k, v)
+			self.metrics_only = False
+		else:
+			self.metrics_only = True
 		
 		for k,v in kwargs.items():
 			if hasattr(self.record, k):
@@ -212,7 +256,7 @@ class WaymoRecorder():
 	
 	def append(self, object):
 		"""
-		Records features to a waymo like record file.
+		Records frame to a waymo like record file.
 		
 		Args:
 			object: An dict with detection, tracking or prediction information.
@@ -224,30 +268,19 @@ class WaymoRecorder():
 		return self.record
 
 
-	def save(self, outputfile=None):
+	def save(self, outputfile=None, metrics_only=False):
 		"""
 		"""
-		if outputfile:
+		if metrics_only or self.metrics_only:
+			record = self.record.inference_results
+		else:
+			record = self.record
+		
+		if outputfile is None:
 			outputfile = self.outputfile
 		if outputfile is None:
-			outputfile = datetime.now().strftime("results_%Y-%m-%d_%H-%M-%S.bin")
-		with open(self.outputfile, 'wb') as f:
-			f.write(self.record.SerializeToString())
+			outputfile = ''
+		outputfile += datetime.now().strftime("%Y-%m-%d_%H-%M-%S.bin")
+		with open(outputfile, 'wb') as f:
+			f.write(record.SerializeToString())
 		return outputfile
-	
-
-# Test WaymoLoader
-if __name__ == '__main__':
-	from __init__ import Features, yaw_to_xyz
-	filename = '/home/gerald/datasets/waymo/results/PointPillars/detection_3d_vehicle_detection_test.bin'
-	waymoloader = WaymoLoader(filename, limit_frames=100, score_filter=0.9)
-	
-	print("WaymoLoader with {} detections!".format(len(waymoloader)))
-	for features in waymoloader:
-		print("Frame:", features.frame_num)
-		print("context:", features.context)
-		print("timestamp:", features.timestamp)
-		print("detections:", len(features))
-		print(features)
-		
-	

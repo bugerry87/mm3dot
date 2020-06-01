@@ -68,12 +68,11 @@ class KalmanTracker(KalmanFilter):
 		return self
 
 	def save(self, filename):
-		model = KalmanModel()
 		np.savez(
 			filename,
-			x_dim = len(self.x),
-			z_dim = len(self.z),
-			u_dim = len(self.u),
+			x_dim = self.dim_x,
+			z_dim = self.dim_z,
+			u_dim = self.dim_u,
 			prediction_model=self.__class__.__name__,
 			motion_model=self.motion_model.__class__.__name__ if self.motion_model else None,
 			label=self.label,

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+
 # Local
 from mm3dot import MM3DOT
 from model import load_models, MOTION_MODELS
@@ -46,11 +47,6 @@ def init_arg_parser(parents=[]):
 		help='Initialize a new model based on a motion model. \n default={}'.format(default)
 		)
 	parser.add_argument(
-		'--output', '-Y',
-		metavar='PATH',
-		help='Output path for tracking results'
-		)
-	parser.add_argument(
 		'--visualize', '-V',
 		metavar='FLAG',
 		type=bool,
@@ -79,9 +75,24 @@ def init_arg_parser(parents=[]):
 
 
 def print_state(model):
+	log_likelihood = 0
 	for trk_id, tracker in model:
-		print('\nTrk:', trk_id, tracker.x.flatten(), '\nDet:', tracker.feature)
-	print()
+		log_likelihood += tracker.log_likelihood
+		print('\nTrk:', trk_id, np.round(tracker.x.flatten(),2), '\nDet:', np.round(tracker.feature,2), '\nLogLikelihood:', tracker.log_likelihood)
+	if len(model):
+		log_likelihood / len(model)
+	print('\nFrame Likelihood:', log_likelihood)
+
+
+def train_cov(model):
+	errors = None
+	for i, (trk_id, tracker) in enumerate(model):
+		state = tracker.x.flatten()
+		feature = tracker.feature
+		n = feature.size
+		if errors is None:
+			errors = np.zeros((state.size, len(model)))
+		errors[:n,i] = (state[:n] - feature)**2
 
 
 def plot_state(model, pos_idx=(0,1), vel_idx=(2,3)):
@@ -133,6 +144,19 @@ def plot_reset(*args):
 	plt.clf()
 
 
+def save_models(model, filename, ages):
+	for trk_id, tracker in model:
+		if tracker.lost:
+			continue
+		label = tracker.label
+		if label in ages:
+			if ages[label] < tracker.age:
+				tracker.save("{}_model_{}.npz".format(filename, label))
+				ages[label] = tracker.age
+		else:
+			ages[label] = tracker.age
+	
+
 def reset(model):
 	print("\n_______________MODEL_RESET_______________\n")
 	model.reset()
@@ -147,13 +171,13 @@ def load_nusenes(args, unparsed):
 
 
 def load_waymo(args, unparsed):
-	from datapi.waymo import WaymoLoader, WaymoRecorder, init_waymo_arg_parser
+	from datapi.waymo import WaymoMergeLoader, WaymoRecorder, init_waymo_arg_parser
 	from waymo_open_dataset.protos import metrics_pb2
 	from datapi import xyz_to_yaw
 	
 	parser = init_waymo_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
-	waymoloader = WaymoLoader(**kwargs.__dict__)
+	waymoloader = WaymoMergeLoader(**kwargs.__dict__)
 	waymorecorder = WaymoRecorder(**kwargs.__dict__)
 	
 	def waymo_record(model):
@@ -163,6 +187,8 @@ def load_waymo(args, unparsed):
 		context = waymoloader.context
 		timestamp = waymoloader.timestamp
 		for trk_id, tracker in model:
+			if tracker.lost:
+				continue
 			object = metrics_pb2.Object()
 			object.context_name = context
 			object.frame_timestamp_micros = timestamp
@@ -181,9 +207,11 @@ def load_waymo(args, unparsed):
 	on_update = []
 	on_terminate = []
 	on_nodata = []
+	ages = {}
 	
 	on_nodata.append(reset)
 	on_update.append(waymo_record)
+	on_update.append(lambda x: save_models(x, kwargs.outputfile + 'waymo2', ages))
 	on_nodata.append(lambda x: waymorecorder.save())
 	on_terminate.append(lambda x: waymorecorder.save())
 	

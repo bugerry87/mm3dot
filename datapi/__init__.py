@@ -17,14 +17,14 @@ def xyz_to_yaw(x, y, z=0):
 	return yaw
 
 
-class Features():
+class Frame():
 	def __init__(self, 
 		labels:list=[],
 		data:np.ndarray=np.empty(0),
 		describtion:dict=None
 		):
 		'''
-		Init a set of labeled features.
+		Init a frame of labeled features.
 		
 		Args:
 			labels: <list(str)> The label names
