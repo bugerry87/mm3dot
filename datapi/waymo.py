@@ -279,8 +279,8 @@ class WaymoRecorder():
 		if outputfile is None:
 			outputfile = self.outputfile
 		if outputfile is None:
-			outputfile = ''
-		outputfile += datetime.now().strftime("%Y-%m-%d_%H-%M-%S.bin")
+			outputfile = 'checkpoint'
+		outputfile += datetime.now().strftime("_%M.bin")
 		with open(outputfile, 'wb') as f:
 			f.write(record.SerializeToString())
 		return outputfile

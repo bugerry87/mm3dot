@@ -3,7 +3,7 @@
 
 # Local
 from mm3dot import MM3DOT
-from model import load_models, MOTION_MODELS
+from model import load_models, Model, MOTION_MODELS
 from utils import *
 
 # Extensions
@@ -78,7 +78,11 @@ def print_state(model):
 	log_likelihood = 0
 	for trk_id, tracker in model:
 		log_likelihood += tracker.log_likelihood
-		print('\nTrk:', trk_id, np.round(tracker.x.flatten(),2), '\nDet:', np.round(tracker.feature,2), '\nLogLikelihood:', tracker.log_likelihood)
+		feature = tracker.feature
+		state = tracker.x.flatten()[:feature.size]
+		print('\nError:', trk_id, np.round(np.abs(feature - state),2))
+		print('Lost:', tracker.lost)
+		print('LogLikelihood:', tracker.log_likelihood)
 	if len(model):
 		log_likelihood / len(model)
 	print('\nFrame Likelihood:', log_likelihood)
@@ -151,8 +155,9 @@ def save_models(model, filename, ages):
 		label = tracker.label
 		if label in ages:
 			if ages[label] < tracker.age:
-				tracker.save("{}_model_{}.npz".format(filename, label))
+				f = tracker.save("{}_model_{}.npz".format(filename, label))
 				ages[label] = tracker.age
+				model.models[label] = Model.load(f)
 		else:
 			ages[label] = tracker.age
 	

@@ -95,7 +95,7 @@ class MM3DOT():
 			if tracker.lost > self.hold_lost:
 				victims.append(k)
 		for k in victims:
-			self.trackers[k]
+			del self.trackers[k]
 		return self
 	
 	def reset(self):

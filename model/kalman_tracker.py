@@ -83,5 +83,6 @@ class KalmanTracker(KalmanFilter):
 			R=self.R,
 			alpha=self.alpha
 			)
+		return filename
 
 PREDICTION_MODELS['KalmanTracker'] = KalmanTracker
