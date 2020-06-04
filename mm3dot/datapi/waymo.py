@@ -3,7 +3,6 @@
 # Build In
 from argparse import ArgumentParser
 from datetime import datetime
-from glob import iglob
 import json
 
 # Installed
@@ -11,8 +10,8 @@ import numpy as np
 from waymo_open_dataset.protos import metrics_pb2, submission_pb2
 
 # Local
-if __name__ != '__main__':
-	from . import Frame, yaw_to_xyz
+from . import Frame, ifile
+from .. import spatial
 
 
 def init_waymo_arg_parser(parents=[]):
@@ -35,6 +34,7 @@ def init_waymo_arg_parser(parents=[]):
 
 class WaymoLoader():
 	"""
+	An iteratable class loading waymo 3D-detections.
 	"""
 	def __init__(self, inputfile,
 		score_filter=0.0,
@@ -48,6 +48,18 @@ class WaymoLoader():
 		**kwargs
 		):
 		"""
+		Initalize WaymoLoader
+		
+		Args:
+			inputfile <str>: Path to a protobuf file.
+			score_filter <float>: Skip detections with lower score.
+			limit_frames <int>: Load a limited number of frames.
+				i.e. for short test.
+			pos_idx <tuple(int)>: Indices of what are supposed to be positions information.
+			shape_idx <tuple(int)>: Indices of what are supposed to be shape inforamtion.
+			vel_idx <tuple(int)>: Indices of what are supposed to be velocity information.
+			acl_idx <tuple(int)>: Indices of what are supposed to be accelerative information.
+			kwargs: Placeholder for compatibility
 		"""
 		self.metrics = metrics_pb2.Objects()
 		with open(inputfile, 'rb') as f:
@@ -120,13 +132,15 @@ class WaymoLoader():
 		pass
 	
 	def metrics_to_frame(self, metrics:list):
+		"""
+		"""
 		data = np.empty((len(metrics), self.z_dim))
 		labels = [object.object.type for object in metrics]
 		for i, object in enumerate(metrics):
 			box = object.object.box
 			data[i, self.pos_idx] = (box.center_x, box.center_y, box.center_z)[:len(self.pos_idx)]
 			data[i, self.shape_idx] = (box.width, box.length, box.height)[:len(self.shape_idx)]
-			data[i, self.rot_idx] = yaw_to_xyz(box.heading)
+			data[i, self.rot_idx] = spatial.yaw_to_vec(box.heading)
 			data[i, self.score_idx] = (object.score,)[:len(self.score_idx)]
 			
 		frame = Frame(labels, data, self.description)
@@ -145,7 +159,7 @@ class WaymoMergeLoader():
 		"""
 		"""
 		self.frame_merge = frame_merge
-		self.loaders = [WaymoLoader(file, **kwargs) for file in iglob(inputfile)]
+		self.loaders = [WaymoLoader(file, **kwargs) for file in ifile(inputfile)]
 		self.description = self.loaders[0].description
 		self.labels = self.loaders[0].labels
 		for k,v in self.description.items():
@@ -256,10 +270,10 @@ class WaymoRecorder():
 	
 	def append(self, object):
 		"""
-		Records frame to a waymo like record file.
+		Append an object to the record.
 		
 		Args:
-			object: An dict with detection, tracking or prediction information.
+			object: A protobuf object of metrics_pb2.
 		
 		Returns:
 			record: The record object itself.

@@ -1,5 +1,5 @@
-'''
-'''
+"""
+"""
 # Build In
 from argparse import ArgumentParser
 
@@ -12,8 +12,12 @@ MOTION_MODELS = {}
 
 
 class Model():
+	"""
+	"""
 	@staticmethod
 	def load(npz_file, model=None, **kwargs):
+		"""
+		"""
 		if model is None:
 			npz = np.load(npz_file)
 			motion_model = str(npz['motion_model']) if 'motion_model' in npz else False
@@ -56,6 +60,8 @@ class Model():
 
 
 def load_models(ifile, models=None, **kwargs):
+	"""
+	"""
 	if models is None:
 		models = {}
 	for filename in ifile:

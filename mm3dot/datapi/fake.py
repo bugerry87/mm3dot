@@ -6,12 +6,8 @@ from argparse import ArgumentParser
 # Installed
 import numpy as np
 
-# Local
-if __name__ != '__main__':	
-	from . import Features
 
-
-def init_fake_loader_parser(parents=[]):
+def init_fake_arg_parser(parents=[]):
 	parser = ArgumentParser(
 		parents=parents,
 		description='Arguments for a FakeLoader'
@@ -54,7 +50,7 @@ class FakeLoader():
 		
 		Args:
 			x_dim <int>: The assumed state size.
-			z_dim <int>: The actuall feature size.
+			z_dim <int>: The actuall frame size.
 			pos_idx <tuple(int)> Indices of the position.
 			vel_idx <tuple(int)> Indices of the velocity.
 			acl_idx <tuple(int)> Indices of the acceleration.
@@ -106,7 +102,7 @@ class FakeLoader():
 		Returns a generator of fake data.
 		
 		Yields:
-			fakedata <Features>: The generated fake data.
+			fakedata <Frame>: The generated fake data.
 		"""
 		N = self.framesize
 		M = self.x_dim
@@ -120,7 +116,7 @@ class FakeLoader():
 			np.random.seed(self.seed + sample)
 			noise += np.random.randn(N,M) * self.noise
 			data += noise @ self.transition
-			yield Features(labels, data[:,:self.z_dim])
+			yield Frame(labels, data[:,:self.z_dim])
 		pass
 	
 	@property
@@ -131,9 +127,8 @@ class FakeLoader():
 		return len(self.transition)
 
 
-# Test
-if __name__ == '__main__':
-	from __init__ import Features
+if __name__ == '__main__': # As Test
+	from __init__ import Frame
 	fakeloader = FakeLoader()
 	print("\nTransition Matrix:")
 	print(fakeloader.transition)
@@ -143,3 +138,5 @@ if __name__ == '__main__':
 	for i, sample in enumerate(fakeloader):
 		print("Sample number", i)
 		print(sample)
+else: # As Lib
+	from . import Frame

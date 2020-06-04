@@ -1,6 +1,8 @@
-
+"""
+"""
 # Installed
 from scipy.optimize import linear_sum_assignment as linear_assignment
+from scipy.spatial.transform import Rotation as R
 from numba import jit
 import numpy as np
 
@@ -20,6 +22,31 @@ def mahalanobis(a, b, S, **kargs):
 				d[n,m] = c @ S[n] @ c.T
 		return d
 	return do_jit(a, b, S)
+
+
+@jit
+def yaw_to_vec(yaw):
+	x = np.cos(yaw)
+	y = np.sin(yaw)
+	z = 0.0
+	return x,y,z
+
+
+@jit
+def vec_to_yaw(x, y, z=0):
+	pi = np.where(x > 0.0, np.pi, -np.pi)
+	with np.errstate(divide='ignore', over='ignore'):
+		yaw = np.arctan(x / y) + (y < 0) * pi
+	return yaw
+
+
+def quat_to_vec(x, y, z, w):
+	r = R.from_quat((x, y, z, w))
+	yaw, pitch, roll = r.as_euler('zyx')
+	x = np.cos(yaw)
+	y = np.sin(yaw)
+	z = np.sin(pitch)
+	return x,y,z
 	
 
 def greedy_threshold(cost, gth=0.1, **kargs):

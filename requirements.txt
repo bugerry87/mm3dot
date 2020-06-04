@@ -1,0 +1,12 @@
+numpy
+numba
+scipy
+filterpy
+
+## Optional
+matplotlib
+
+## 3rd Party
+#argoverse (Python >=3.6)
+#waymo-open-dataset (Python 3.5)
+#nuscenes

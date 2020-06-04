@@ -3,12 +3,12 @@
 
 # Local
 from mm3dot import MM3DOT
-from model import load_models, Model, MOTION_MODELS
-from utils import *
+from mm3dot.model import load_models, Model, MOTION_MODELS
+from mm3dot.datapi import ifile
 
 # Extensions
-import model.constant_accumulation
-import model.kalman_tracker
+import mm3dot.model.constant_accumulation
+import mm3dot.model.kalman_tracker
 
 try:
 	import matplotlib.pyplot as plt
@@ -26,7 +26,7 @@ def init_arg_parser(parents=[]):
 		parents=parents
 		)
 	parser.add_argument(
-		'--dataset', '-d',
+		'dataset',
 		metavar='NAME',
 		choices=['argoverse', 'nuscenes', 'kitti', 'waymo', 'fake'],
 		default='fake',
@@ -176,9 +176,9 @@ def load_nusenes(args, unparsed):
 
 
 def load_waymo(args, unparsed):
-	from datapi.waymo import WaymoMergeLoader, WaymoRecorder, init_waymo_arg_parser
+	from mm3dot.datapi.waymo import WaymoMergeLoader, WaymoRecorder, init_waymo_arg_parser
 	from waymo_open_dataset.protos import metrics_pb2
-	from datapi import xyz_to_yaw
+	from mm3dot.spatial import vec_to_yaw
 	
 	parser = init_waymo_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
@@ -206,7 +206,7 @@ def load_waymo(args, unparsed):
 			object.object.box.length = tracker.x[shape_idx[0]]
 			object.object.box.width = tracker.x[shape_idx[1]]
 			object.object.box.height = tracker.x[shape_idx[2]]
-			object.object.box.heading = xyz_to_yaw(*tracker.x[rot_idx,])
+			object.object.box.heading = vec_to_yaw(*tracker.x[rot_idx,])
 			waymorecorder.append(object)
 	
 	on_update = []
@@ -216,7 +216,7 @@ def load_waymo(args, unparsed):
 	
 	on_nodata.append(reset)
 	on_update.append(waymo_record)
-	on_update.append(lambda x: save_models(x, kwargs.outputfile + 'waymo2', ages))
+	on_update.append(lambda x: save_models(x, kwargs.outputfile + 'waymo', ages))
 	on_nodata.append(lambda x: waymorecorder.save())
 	on_terminate.append(lambda x: waymorecorder.save())
 	
@@ -237,7 +237,31 @@ def load_waymo(args, unparsed):
 
 
 def load_argoverse(args, unparsed):
-	raise NotImplementedError("ARGOVERSE is currently not supported")
+	from mm3dot.datapi.argoverse import ArgoLoader, init_argoverse_arg_parser
+	parser = init_argoverse_arg_parser()
+	kwargs, _ = parser.parse_known_args(unparsed)
+	argoloader = ArgoLoader(**kwargs.__dict__)
+	
+	on_update = []
+	on_terminate = []
+	on_nodata = []
+	
+	on_nodata.append(reset)
+	
+	if args.verbose:
+		on_update.append(print_state)
+	
+	if args.visualize:
+		on_update.append(lambda x: plot_state(x, argoloader.pos_idx, argoloader.vel_idx))
+		on_terminate.append(plot_show)
+		on_nodata.append(plot_reset)
+	
+	callbacks = {
+		'UPDATE': lambda x: [update(x) for update in on_update],
+		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
+		'NODATA': lambda x: [nodata(x) for nodata in on_nodata]
+		}
+	return argoloader, callbacks
 
 
 def load_fake(args, unparsed):

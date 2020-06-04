@@ -3,8 +3,8 @@
 import numpy as np
 
 # Local
-import spatial as spatial
-from model import PREDICTION_MODELS
+from . import spatial
+from .model import PREDICTION_MODELS
 
 
 class MM3DOT():
