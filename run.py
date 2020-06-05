@@ -74,21 +74,20 @@ def init_arg_parser(parents=[]):
 	return parser
 
 
-def print_state(model):
+def print_state(model, *args):
 	log_likelihood = 0
 	for trk_id, tracker in model:
 		log_likelihood += tracker.log_likelihood
 		feature = tracker.feature
 		state = tracker.x.flatten()[:feature.size]
 		print('\nError:', trk_id, np.round(np.abs(feature - state),2))
-		print('Lost:', tracker.lost)
-		print('LogLikelihood:', tracker.log_likelihood)
+		print('Age:', tracker.age, 'Lost:', tracker.lost, 'LogLikelihood:', tracker.log_likelihood)
 	if len(model):
 		log_likelihood / len(model)
 	print('\nFrame Likelihood:', log_likelihood)
 
 
-def train_cov(model):
+def train_cov(model, *args):
 	errors = None
 	for i, (trk_id, tracker) in enumerate(model):
 		state = tracker.x.flatten()
@@ -99,45 +98,96 @@ def train_cov(model):
 		errors[:n,i] = (state[:n] - feature)**2
 
 
-def plot_state(model, pos_idx=(0,1), vel_idx=(2,3)):
-	pos_idx = pos_idx[:2]
-	vel_idx = vel_idx[:2]
+def plot_state(model, *args):
+	pos_idx = model.pos_idx[:2]
+	vel_idx = model.vel_idx[:2]
+	rot_idx = model.rot_idx[:2]
+	score_idx = model.score_idx[0]
+	
+	def pred_quiver(pos, vel, color):
+		return plt.quiver(
+			*pos, *vel,
+			color=color,
+			angles='xy',
+			scale_units='xy',
+			scale=1,
+			width=1e-3
+			)
+	
 	for trk_id, tracker in model:
 		if 'history' not in tracker.__dict__:
 			tracker.history = deque()
-		cs = np.abs(np.sin(0.1 * trk_id))
-		c1 = hsv_to_rgb((cs, 1, 1))
-		c2 = hsv_to_rgb((cs, 1, 0.5))
-		det = tracker.feature[pos_idx,]
+		
 		state = tracker.x.flatten()
 		pos = state[pos_idx,]
 		vel = state[vel_idx,]
+		rot = state[rot_idx,]
+		score = tracker.feature[score_idx]
+		det = tracker.feature[pos_idx,]
+		confi = np.exp(-tracker.lost) * score
+		
+		cs = np.abs(np.sin(0.125 * trk_id))
+		c1 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
+		c2 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
 		
 		if len(tracker.history) > 10:
 			tracker.history.rotate(-1)
-			scatter, quiver = tracker.history[0]
-			scatter.set_offsets(det)
-			scatter.set_color(c1)
+			detection, prediction = tracker.history[0]
+			detection.set_offsets(det)
+			detection.set_UVC(*rot)
+			detection.set_color(c1)
 			if np.any(vel):
-				if quiver:
-					quiver.set_offsets(pos)
-					quiver.set_UVC(*vel)
-					quiver.set_color(c2)
+				if prediction:
+					prediction.set_offsets(pos)
+					prediction.set_UVC(*vel)
+					prediction.set_color(c2)
 				else:
-					quiver = plt.quiver(*pos, *vel, color=[c2], angles='xy', scale_units='xy', scale=1)
-					tracker.history[0] = (scatter, quiver)
-			elif quiver:
-				quiver.remove()
-				tracker.history[0] = (scatter, None)
+					prediction = pred_quiver(pos, vel, c2)
+					tracker.history[0] = (detection, prediction)
+			elif prediction:
+				prediction.remove()
+				tracker.history[0] = (detection, None)
 		else:
-			scatter = plt.scatter(*det, c=[c1])
+			detection = plt.quiver(
+				*det, *rot,
+				color=c1,
+				angles='xy',
+				scale_units='xy',
+				scale=0.0625,
+				pivot='mid'
+				)
 			if np.any(vel):
-				quiver = plt.quiver(*pos, *vel, color=[c2], angles='xy', scale_units='xy', scale=1)
+				prediction = pred_quiver(pos, vel, c2)
 			else:
-				quiver = None
-			tracker.history.append((scatter, quiver))
-	plt.pause(0.1)
+				prediction = None
+			tracker.history.append((detection, prediction))
 	plt.draw()
+	plt.pause(0.1)
+	pass
+
+
+def plot_gt(frame, gtloader):
+	pos_idx = gtloader.pos_idx[:2]
+	rot_idx = gtloader.rot_idx[:2]
+	gt = gtloader[frame]
+	pos = gt.data.T[pos_idx,]
+	rot = gt.data.T[rot_idx,]
+	color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 1)), 0.5) for uuid in gt.uuids]
+	
+	if 'plt' in gtloader.__dict__:
+		gtloader.plt.remove()
+	
+	gtloader.plt = plt.quiver(
+		pos[0], pos[1], rot[0], rot[1],
+		color=color,
+		angles='xy',
+		scale_units='xy',
+		scale=0.0625,
+		pivot='mid'
+		)
+	plt.draw()
+	plt.pause(0.1)
+	pass
 
 
 def plot_show(*args):
@@ -146,6 +196,9 @@ def plot_show(*args):
 
 def plot_reset(*args):
 	plt.clf()
+	plt.scatter(0,0, marker='x', c='k')
+	plt.xlim(-300, 300)
+	plt.ylim(-300, 300)
 
 
 def save_models(model, filename, ages):
@@ -182,15 +235,15 @@ def load_waymo(args, unparsed):
 	
 	parser = init_waymo_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
-	waymoloader = WaymoMergeLoader(**kwargs.__dict__)
-	waymorecorder = WaymoRecorder(**kwargs.__dict__)
+	dataloader = WaymoMergeLoader(**kwargs.__dict__)
+	datarecorder = WaymoRecorder(**kwargs.__dict__)
 	
 	def waymo_record(model):
-		pos_idx = waymoloader.pos_idx
-		shape_idx = waymoloader.shape_idx
-		rot_idx = waymoloader.rot_idx
-		context = waymoloader.context
-		timestamp = waymoloader.timestamp
+		pos_idx = dataloader.pos_idx
+		shape_idx = dataloader.shape_idx
+		rot_idx = dataloader.rot_idx
+		context = dataloader.context
+		timestamp = dataloader.timestamp
 		for trk_id, tracker in model:
 			if tracker.lost:
 				continue
@@ -207,7 +260,7 @@ def load_waymo(args, unparsed):
 			object.object.box.width = tracker.x[shape_idx[1]]
 			object.object.box.height = tracker.x[shape_idx[2]]
 			object.object.box.heading = vec_to_yaw(*tracker.x[rot_idx,])
-			waymorecorder.append(object)
+			datarecorder.append(object)
 	
 	on_update = []
 	on_terminate = []
@@ -216,31 +269,36 @@ def load_waymo(args, unparsed):
 	
 	on_nodata.append(reset)
 	on_update.append(waymo_record)
-	on_update.append(lambda x: save_models(x, kwargs.outputfile + 'waymo', ages))
-	on_nodata.append(lambda x: waymorecorder.save())
-	on_terminate.append(lambda x: waymorecorder.save())
+	on_update.append(lambda model, *args: save_models(model, kwargs.outputfile + 'waymo', ages))
+	on_nodata.append(lambda *args: datarecorder.save())
+	on_terminate.append(lambda *args: datarecorder.save())
 	
 	if args.verbose:
 		on_update.append(print_state)
 	
 	if args.visualize:
-		on_update.append(lambda x: plot_state(x, waymoloader.pos_idx, waymoloader.vel_idx))
+		on_update.append(plot_state)
 		on_terminate.append(plot_show)
 		on_nodata.append(plot_reset)
+		plot_reset()
 	
 	callbacks = {
-		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
-		'NODATA': lambda x: [nodata(x) for nodata in on_nodata]
+		'UPDATE': lambda *args: [update(*args) for update in on_update],
+		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
+		'NODATA': lambda *args: [nodata(*args) for nodata in on_nodata]
 		}
-	return waymoloader, callbacks
+	return dataloader, callbacks
 
 
 def load_argoverse(args, unparsed):
-	from mm3dot.datapi.argoverse import ArgoLoader, init_argoverse_arg_parser
+	from mm3dot.datapi.argoverse import ArgoLoader, ArgoGTLoader, init_argoverse_arg_parser
 	parser = init_argoverse_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
-	argoloader = ArgoLoader(**kwargs.__dict__)
+	dataloader = ArgoLoader(**kwargs.__dict__)
+	if kwargs.groundtruth is not None:
+		groundtruth = ArgoGTLoader(**kwargs.__dict__)
+	else:
+		groundtruth = None
 	
 	on_update = []
 	on_terminate = []
@@ -252,23 +310,26 @@ def load_argoverse(args, unparsed):
 		on_update.append(print_state)
 	
 	if args.visualize:
-		on_update.append(lambda x: plot_state(x, argoloader.pos_idx, argoloader.vel_idx))
+		if groundtruth:
+			on_update.append(lambda _, frame: plot_gt(frame, groundtruth))
+		#on_update.append(plot_state)
 		on_terminate.append(plot_show)
 		on_nodata.append(plot_reset)
+		plot_reset()
 	
 	callbacks = {
-		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
-		'NODATA': lambda x: [nodata(x) for nodata in on_nodata]
+		'UPDATE': lambda *args: [update(*args) for update in on_update],
+		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
+		'NODATA': lambda *args: [nodata(*args) for nodata in on_nodata]
 		}
-	return argoloader, callbacks
+	return dataloader, callbacks
 
 
 def load_fake(args, unparsed):
 	from datapi.fake import FakeLoader, init_fake_loader_parser
 	parser = init_fake_loader_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
-	fakeloader = FakeLoader(**kwargs.__dict__)
+	dataloader = FakeLoader(**kwargs.__dict__)
 	
 	on_update = []
 	on_terminate = []
@@ -278,16 +339,17 @@ def load_fake(args, unparsed):
 		pass
 	
 	if args.visualize:
-		on_update.append(lambda x: plot_state(x, fakeloader.pos_idx, fakeloader.vel_idx))
+		on_update.append(lambda *args: plot_state(*args))
 		on_terminate.append(plot_show)
+		plot_reset()
 		pass
 	
 	callbacks = {
-		'UPDATE': lambda x: [update(x) for update in on_update],
-		'TERMINATE': lambda x: [terminate(x) for terminate in on_terminate],
+		'UPDATE': lambda *args: [update(*args) for update in on_update],
+		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
 		'NODATA': reset
 		}
-	return fakeloader, callbacks
+	return dataloader, callbacks
 
 
 def main(args, unparsed):
@@ -316,12 +378,16 @@ def main(args, unparsed):
 		raise ValueError("ERROR: Can't find any model! Please check --initializer or --model.")
 	
 	mm3dot = MM3DOT(models, **args.__dict__)
+	mm3dot.pos_idx = dataloader.pos_idx
+	mm3dot.vel_idx = dataloader.vel_idx
+	mm3dot.rot_idx = dataloader.rot_idx
+	mm3dot.score_idx = dataloader.score_idx
 	try:
-		for state in mm3dot.run(dataloader):
+		for state, *args in mm3dot.run(dataloader):
 			if state in callbacks:
-				callbacks[state](mm3dot)
+				callbacks[state](mm3dot, *args)
 	except KeyboardInterrupt:
-		callbacks['TERMINATE'](mm3dot)
+		callbacks['TERMINATE'](mm3dot, *args)
 	pass
 
 

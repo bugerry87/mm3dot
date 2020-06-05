@@ -1,10 +1,20 @@
 
+# Build-in
+from uuid import uuid1
+
 # Installed
 import numpy as np
 
 # Local
 from . import spatial
 from .model import PREDICTION_MODELS
+
+NODATA = 'NODATA'
+SPAWN = 'SPAWN'
+UPDATE = 'UPDATE'
+PREDICT = 'PREDICT'
+DROP = 'DROP'
+TERMINATE = 'TERMINATE'
 
 
 class MM3DOT():
@@ -14,6 +24,8 @@ class MM3DOT():
 			hold_lost=10,
 			**kwargs
 		):
+		"""
+		"""
 		self.__trk_id_cntr__ = 0
 		self.models = models
 		self.dist_func = dist_func
@@ -26,7 +38,7 @@ class MM3DOT():
 	def __len__(self):
 		return len(self.trackers.keys())
 	
-	def __get__(self, idx):
+	def __getitem__(self, idx):
 		return self.trackers[idx]
 	
 	def __contains__(self, idx):
@@ -35,8 +47,8 @@ class MM3DOT():
 	def __iter__(self):
 		return iter(self.trackers.items())
 	
-	def spawn_trackers(self, detections, **kwargs):
-		for label, detection in detections:
+	def spawn_trackers(self, frame, **kwargs):
+		for label, detection in frame:
 			if label in self.models:
 				model = self.models[label]
 				if model.prediction_model in PREDICTION_MODELS:
@@ -46,6 +58,7 @@ class MM3DOT():
 				self.__trk_id_cntr__ += 1
 				tracker = prediction_model(detection, model, **kwargs)
 				tracker.id = self.__trk_id_cntr__
+				tracker.uuid = uuid1()
 				tracker.age = 0
 				tracker.lost = 0
 				self.trackers[self.__trk_id_cntr__] = tracker
@@ -57,8 +70,8 @@ class MM3DOT():
 		for tracker in self.trackers.values():
 			tracker.predict(**kwargs)
 		
-	def match(self, detections, **kwargs):
-		N, M = len(self.trackers), detections.shape[-1]
+	def match(self, frame, **kwargs):
+		N, M = len(self.trackers), frame.shape[-1]
 		track_features = np.empty((N,M))
 		track_covars = np.empty((N,M,M))
 		track_ids = np.empty(N)
@@ -66,11 +79,11 @@ class MM3DOT():
 			track_features[i] = tracker.feature
 			track_covars[i] = tracker.SI
 			track_ids[i] = idx
-		cost = self.dist_func(track_features, detections.data, track_covars, **kwargs)
+		cost = self.dist_func(track_features, frame.data, track_covars, **kwargs)
 		(trk_id, det_id), trkm, detm = self.assign_func(cost, **kwargs)
-		return (track_ids[trk_id], *detections[det_id]), track_ids[~trkm], detections[~detm]
+		return (track_ids[trk_id], *frame[det_id]), track_ids[~trkm], frame[~detm]
 		
-	def update(self, detections, matches, lost, unmatched, **kwargs):
+	def update(self, frame, matches, lost, unmatched, **kwargs):
 		# update matched trackers
 		self.frame_counter += 1
 		for trk_id, label, detection in zip(*matches):
@@ -84,7 +97,7 @@ class MM3DOT():
 		for trk_id in lost:
 			self.trackers[trk_id].lost += 1
 			self.trackers[trk_id].update(None, **kwargs)
-		# spawn trackers for unmatched detections
+		# spawn trackers for unmatched frame
 		self.spawn_trackers(zip(*unmatched))
 		return self
 	
@@ -105,26 +118,27 @@ class MM3DOT():
 		data_iter = iter(dataloader)
 		spawn = True
 			
-		for detections in data_iter:
-			if detections is None:
-				yield 'NODATA'
+		for frame in data_iter:
+			if frame is None:
+				yield NODATA
 				spawn = True
 				continue
 			
 			if spawn:
-				self.spawn_trackers(detections, **kwargs)
+				self.spawn_trackers(frame, **kwargs)
 				spawn = False
-				yield 'SPAWN'
+				yield SPAWN, frame
 				continue
 				
-			match_results = self.match(detections, **kwargs)
-			self.update(detections, *match_results, **kwargs)
-			yield 'UPDATE'
-			
-			self.drop_trackers(**kwargs)
-			yield 'DROP'
+			match_results = self.match(frame, **kwargs)
+			self.update(frame, *match_results, **kwargs)
+			yield UPDATE, frame
 			
 			self.predict(**kwargs)
-			yield 'PREDICT'
-		yield 'TERMINATE'	
+			yield PREDICT, frame
+			
+			self.drop_trackers(**kwargs)
+			yield DROP, frame
+			
+		yield TERMINATE
 			

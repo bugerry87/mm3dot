@@ -23,8 +23,8 @@ def init_constant_accumulation_parser(parents=[]):
 	parser.add_argument('--rot_idx', type=int, metavar='TUPLE', nargs='*', default=None)
 	parser.add_argument('--template', type=str, metavar='STRING', default='KalmanTracker')
 	parser.add_argument('--vel', type=float, metavar='FLOAT', default=1.0)
-	parser.add_argument('--acl', type=float, metavar='FLOAT', default=0.1)
-	parser.add_argument('--rot', type=float, metavar='FLOAT', default=0.01)
+	parser.add_argument('--acl', type=float, metavar='FLOAT', default=0.125)
+	parser.add_argument('--rot', type=float, metavar='FLOAT', default=0.0)
 	return parser
 
 
@@ -42,8 +42,8 @@ class ConstantAccumulation(Model):
 				rot_idx=None,
 				acl_idx=None,
 				vel=1.0,
-				acl=0.1,
-				rot=0.01,
+				acl=0.125,
+				rot=0.0,
 				prediction_model='KalmanTracker',
 				label=None,
 				**kwargs
@@ -57,7 +57,7 @@ class ConstantAccumulation(Model):
 			self.P = np.eye(x_dim) * 1000
 			self.P[z_dim:] *= 10
 			self.Q = np.eye(x_dim)
-			self.Q[z_dim:] *= 0.01
+			self.Q[z_dim:] *= 0.015625
 			self.prediction_model = prediction_model
 			self.motion_model = 'ConstantAccumulation'
 			

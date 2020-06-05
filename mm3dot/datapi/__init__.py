@@ -82,7 +82,7 @@ class Prototype():
 			return [self.__dict__[k] for k in args]
 	
 	def __contains__(self, *args):
-		return all(args in self.__dict__)
+		return args in self.__dict__
 	pass
 
 
@@ -117,15 +117,7 @@ class Frame():
 	def __iter__(self):
 		return zip(self.labels, self.data)
 	
-	def __contains__(self, labels):
-		return labels in self.labels
-	
 	def __getitem__(self, slc_n, slc_m=None):
-		if isinstance(slc_n, str):
-			if slc_n in self.labels:
-				slc_n = self.labels.tolist().index(slc_n)
-			else:
-				raise KeyError("ERROR: Label '{}' does not exist!".format(slc_n))
 		if slc_m is None:
 			return self.labels[slc_n], self.data[slc_n]
 		else:

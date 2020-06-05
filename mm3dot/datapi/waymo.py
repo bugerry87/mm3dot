@@ -20,7 +20,7 @@ def init_waymo_arg_parser(parents=[]):
 		description='Arguments for a Waymo lib'
 		)
 	parser.add_argument('--metafile', metavar='JSON')
-	parser.add_argument('--inputfile', metavar='PATH')
+	parser.add_argument('--inputfiles', metavar='PATH')
 	parser.add_argument('--outputfile', metavar='PATH', default='')
 	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1,2))
 	parser.add_argument('--shape_idx', type=int, nargs='*', metavar='TUPLE', default=(4,3,5))
@@ -36,7 +36,7 @@ class WaymoLoader():
 	"""
 	An iteratable class loading waymo 3D-detections.
 	"""
-	def __init__(self, inputfile,
+	def __init__(self, inputfiles,
 		score_filter=0.0,
 		limit_frames=None,
 		pos_idx=(0,1,2),
@@ -51,7 +51,7 @@ class WaymoLoader():
 		Initalize WaymoLoader
 		
 		Args:
-			inputfile <str>: Path to a protobuf file.
+			inputfiles <str>: Path to a protobuf file.
 			score_filter <float>: Skip detections with lower score.
 			limit_frames <int>: Load a limited number of frames.
 				i.e. for short test.
@@ -62,7 +62,7 @@ class WaymoLoader():
 			kwargs: Placeholder for compatibility
 		"""
 		self.metrics = metrics_pb2.Objects()
-		with open(inputfile, 'rb') as f:
+		with open(inputfiles, 'rb') as f:
 			self.metrics.ParseFromString(bytearray(f.read()))
 		
 		self.limit_frames = limit_frames
@@ -152,14 +152,14 @@ class WaymoLoader():
 class WaymoMergeLoader():
 	"""
 	"""
-	def __init__(self, inputfile,
+	def __init__(self, inputfiles,
 		frame_merge=False,
 		**kwargs
 		):
 		"""
 		"""
 		self.frame_merge = frame_merge
-		self.loaders = [WaymoLoader(file, **kwargs) for file in ifile(inputfile)]
+		self.loaders = [WaymoLoader(file, **kwargs) for file in ifile(inputfiles)]
 		self.description = self.loaders[0].description
 		self.labels = self.loaders[0].labels
 		for k,v in self.description.items():
