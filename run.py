@@ -4,6 +4,7 @@
 # Local
 from mm3dot import MM3DOT
 from mm3dot.model import load_models, Model, MOTION_MODELS
+from mm3dot.spatial import DISTANCES, ASSIGNMENTS
 from mm3dot.datapi import ifile
 
 # Extensions
@@ -23,13 +24,15 @@ def init_arg_parser(parents=[]):
 	from argparse import ArgumentParser
 	parser = ArgumentParser(
 		description='Runs the tracking model on pre-computed detection results.',
-		parents=parents
+		parents=parents,
+		add_help=False
 		)
 	parser.add_argument(
 		'dataset',
-		metavar='NAME',
+		metavar='DATASET',
+		nargs='?',
 		choices=['argoverse', 'nuscenes', 'kitti', 'waymo', 'fake'],
-		default='fake',
+		default=None,
 		help='Name of the dataset.'
 		)
 	parser.add_argument(
@@ -46,6 +49,22 @@ def init_arg_parser(parents=[]):
 		default=default,
 		help='Initialize a new model based on a motion model. \n default={}'.format(default)
 		)
+	default = next(iter(DISTANCES.keys()), None)
+	parser.add_argument(
+		'--dist_func', '-d',
+		metavar='DISTANCE_FUNC',
+		choices=DISTANCES.keys(),
+		default=default,
+		help='Choose a distance function. \n default={}'.format(default)
+		)
+	default = 'hungarian' #next(iter(ASSIGNMENTS.keys()), None)
+	parser.add_argument(
+		'--assign_func', '-a',
+		metavar='ASSIGNMENT_FUNC',
+		choices=ASSIGNMENTS.keys(),
+		default=default,
+		help='Choose an assignment function. \n default={}'.format(default)
+		)
 	parser.add_argument(
 		'--visualize', '-V',
 		metavar='FLAG',
@@ -53,7 +72,7 @@ def init_arg_parser(parents=[]):
 		nargs='?',
 		default=False,
 		const=True,
-		help='Visualize if visualizations are provided'
+		help='Visualize if visualizations are provided.'
 		)
 	parser.add_argument(
 		'--verbose', '-v',
@@ -62,7 +81,7 @@ def init_arg_parser(parents=[]):
 		nargs='?',
 		default=False,
 		const=True,
-		help='Text plot if provided'
+		help='Plot text if provided.'
 		)
 	parser.add_argument(
 		'--hold_lost',
@@ -75,16 +94,17 @@ def init_arg_parser(parents=[]):
 
 
 def print_state(model, *args):
-	log_likelihood = 0
+	likelihood = 0
 	for trk_id, tracker in model:
-		log_likelihood += tracker.log_likelihood
+		likelihood += tracker.likelihood
 		feature = tracker.feature
 		state = tracker.x.flatten()[:feature.size]
 		print('\nError:', trk_id, np.round(np.abs(feature - state),2))
-		print('Age:', tracker.age, 'Lost:', tracker.lost, 'LogLikelihood:', tracker.log_likelihood)
+		print('Age:', tracker.age, 'Lost:', tracker.lost, 'Score:', tracker.score)
+		print('Likelihood:', tracker.likelihood, 'Mahalanobis', tracker.mahalanobis)
 	if len(model):
-		log_likelihood / len(model)
-	print('\nFrame Likelihood:', log_likelihood)
+		likelihood / len(model)
+	print('\nFrame Likelihood:', likelihood)
 
 
 def train_cov(model, *args):
@@ -96,9 +116,10 @@ def train_cov(model, *args):
 		if errors is None:
 			errors = np.zeros((state.size, len(model)))
 		errors[:n,i] = (state[:n] - feature)**2
+	pass
 
 
-def plot_state(model, *args):
+def plot_state(model, frame=None, history=1,*args):
 	pos_idx = model.pos_idx[:2]
 	vel_idx = model.vel_idx[:2]
 	rot_idx = model.rot_idx[:2]
@@ -130,7 +151,7 @@ def plot_state(model, *args):
 		c1 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
 		c2 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
 		
-		if len(tracker.history) > 10:
+		if len(tracker.history) > history:
 			tracker.history.rotate(-1)
 			detection, prediction = tracker.history[0]
 			detection.set_offsets(det)
@@ -172,7 +193,7 @@ def plot_gt(frame, gtloader):
 	gt = gtloader[frame]
 	pos = gt.data.T[pos_idx,]
 	rot = gt.data.T[rot_idx,]
-	color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 1)), 0.5) for uuid in gt.uuids]
+	color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 0.5)), 0.5) for uuid in gt.uuids]
 	
 	if 'plt' in gtloader.__dict__:
 		gtloader.plt.remove()
@@ -192,13 +213,15 @@ def plot_gt(frame, gtloader):
 
 def plot_show(*args):
 	plt.show()
+	pass
 
 
 def plot_reset(*args):
 	plt.clf()
 	plt.scatter(0,0, marker='x', c='k')
-	plt.xlim(-300, 300)
-	plt.ylim(-300, 300)
+	plt.xlim(-250, 250)
+	plt.ylim(-250, 250)
+	pass
 
 
 def save_models(model, filename, ages):
@@ -213,12 +236,14 @@ def save_models(model, filename, ages):
 				model.models[label] = Model.load(f)
 		else:
 			ages[label] = tracker.age
+	pass
 	
 
 def reset(model):
 	print("\n_______________MODEL_RESET_______________\n")
 	model.reset()
-
+	pass
+	
 
 def load_kitti(args, unparsed):
 	raise NotImplementedError("KITTI is currently not supported")
@@ -291,7 +316,7 @@ def load_waymo(args, unparsed):
 
 
 def load_argoverse(args, unparsed):
-	from mm3dot.datapi.argoverse import ArgoLoader, ArgoGTLoader, init_argoverse_arg_parser
+	from mm3dot.datapi.argoverse import ArgoLoader, ArgoGTLoader, ArgoRecorder, init_argoverse_arg_parser
 	parser = init_argoverse_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
 	dataloader = ArgoLoader(**kwargs.__dict__)
@@ -312,10 +337,15 @@ def load_argoverse(args, unparsed):
 	if args.visualize:
 		if groundtruth:
 			on_update.append(lambda _, frame: plot_gt(frame, groundtruth))
-		#on_update.append(plot_state)
+		on_update.append(plot_state)
 		on_terminate.append(plot_show)
 		on_nodata.append(plot_reset)
 		plot_reset()
+	
+	if kwargs.outputpath:
+		recorder = ArgoRecorder(**kwargs.__dict__)
+		on_update.append(recorder.record)
+		on_terminate.append(recorder.record)
 	
 	callbacks = {
 		'UPDATE': lambda *args: [update(*args) for update in on_update],
@@ -393,4 +423,8 @@ def main(args, unparsed):
 
 if __name__ == '__main__':
 	parser = init_arg_parser()
-	main(*parser.parse_known_args())
+	args, unparsed = parser.parse_known_args()
+	if args.dataset is None:
+		parser.print_help()
+		exit()
+	main(args, unparsed)

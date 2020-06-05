@@ -20,17 +20,26 @@ def init_argoverse_arg_parser(parents=[]):
 		parents=parents,
 		description='Arguments for a Agroverse lib'
 		)
-	parser.add_argument('--metafile', metavar='JSON')
-	parser.add_argument('--inputfiles', metavar='PATH')
-	parser.add_argument('--groundtruth', metavar='PATH')
-	parser.add_argument('--outputfile', metavar='PATH', default='')
-	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='TUPLE', default=(0,1,2))
-	parser.add_argument('--shape_idx', type=int, nargs='*', metavar='TUPLE', default=(3,4,5))
-	parser.add_argument('--rot_idx', type=int, nargs='*', metavar='TUPLE', default=(6,7,8))
-	parser.add_argument('--score_idx', type=int, nargs='*', metavar='TUPLE', default=(9,))
-	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='TUPLE', default=(10,11,12))
-	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='TUPLE', default=())
-	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.9)
+	parser.add_argument('--inputfiles', metavar='WILDCARD',
+		help="A wildcard to pre-computed detection results.")
+	parser.add_argument('--groundtruth', metavar='WILDCARD',
+		help="A wildcar to the ground truth files")
+	parser.add_argument('--outputpath', metavar='PATH', default=None,
+		help="Filepath to store the tracking results at.")
+	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='INT', default=(0,1,2),
+		help="Indices for positional information.")
+	parser.add_argument('--shape_idx', type=int, nargs='*', metavar='INT', default=(3,4,5),
+		help="Indices for shape information.")
+	parser.add_argument('--rot_idx', type=int, nargs='*', metavar='INT', default=(6,7,8),
+		help="Indices for rotative information.")
+	parser.add_argument('--score_idx', type=int, nargs='*', metavar='INT', default=(9,),
+		help="Indices for score information.")
+	parser.add_argument('--vel_idx', type=int, nargs='*', metavar='INT', default=(10,11,12),
+		help="Indices for velocity information.")
+	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='INT', default=(),
+		help="Indices for accelerative information.")
+	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.9,
+		help="Consider detections with scores above only.")
 	return parser
 
 
@@ -165,3 +174,84 @@ class ArgoGTLoader(ArgoLoader):
 				)
 		return super().__getitem__(file)
 	pass
+
+
+class ArgoRecorder():
+	"""
+	ArgoRecorder records tracking results frame-wise.
+	
+	Expected outgoing data:
+		"center": {
+			"x": -24.69597053527832,
+			"y": -3.5076069831848145,
+			"z": 0.5611804127693176
+		},
+		"height": 1.7947044372558594,
+		"label_class": "VEHICLE",
+		"length": 4.827436923980713,
+		"occlusion": 0,
+		"rotation": {
+			"w": -0.9999523072913704,
+			"x": 0.0,
+			"y": 0.0,
+			"z": 0.009766429371304468
+		},
+		"score": 0.8911644220352173,
+		"timestamp": 315969629019741000,
+		"track_label_uuid": "6022f892-fdfa-4a32-83e0-274b911e7dbf",
+		"tracked": true,
+		"width": 1.9237309694290161
+	"""
+	def __init__(self,
+		outputpath='./',
+		pos_idx=(0,1,2),
+		shape_idx=(3,4,5),
+		rot_idx=(6,7,8),
+		score_filter=0.0,
+		lost_filter=1,
+		age_filter=0,
+		**kwargs
+		):
+		"""
+		"""
+		self.outputpath = outputpath
+		self.pos_idx = pos_idx if isinstance(pos_idx, (tuple, list)) else (pos_idx,)
+		self.shape_idx = shape_idx if isinstance(shape_idx, (tuple, list)) else (shape_idx,)
+		self.rot_idx = rot_idx if isinstance(rot_idx, (tuple, list)) else (rot_idx,)
+		self.score_filter = score_filter
+		self.lost_filter = lost_filter
+		self.age_filter = age_filter
+		pass
+	
+	def record(self, model, frame):
+		path = os.path.join(self.outputpath, frame.subset, frame.context, frame.format, frame.filename)
+		os.makedirs(os.path.dirname(path), exist_ok=True)
+		
+		jdata = []
+		for trk_id, tracker in model:
+			if self.lost_filter and tracker.lost >= self.lost_filter:
+				continue
+			elif tracker.age < self.age_filter:
+				continue
+				
+			x = tracker.x.flatten()
+			pos = dict(zip('xyz', x[self.pos_idx,]))
+			obj = dict(zip(['length','width','height'], x[self.shape_idx,]))
+			uuid = tracker.uuid
+			rot = spatial.vec_to_yaw(*x[self.rot_idx,])
+			rot = spatial.R.from_euler('zyx', (rot, 0, 0))
+			rot = dict(zip('xyzw', rot.as_quat()))
+			
+			obj['center'] = pos
+			obj['rotation'] = rot
+			obj['score'] = tracker.score
+			obj['track_label_uuid'] = str(uuid)
+			obj['label_class'] = tracker.label
+			obj['timestamp'] = frame.timestamp
+			obj['tracked'] = True
+			obj['occlusion'] = 0
+			jdata.append(obj)
+		
+		with open(path, 'w') as f:
+			json.dump(jdata, f)
+		pass

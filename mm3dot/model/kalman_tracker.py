@@ -64,8 +64,12 @@ class KalmanTracker(KalmanFilter):
 		n = min(len(args),2)
 		super().update(feature, *args[:n])
 		if feature is not None:
-			self.feature = feature 
+			self.feature = feature
 		return self
+	
+	@property
+	def score(self):
+		return np.exp(-self.mahalanobis)
 
 	def save(self, filename):
 		np.savez(

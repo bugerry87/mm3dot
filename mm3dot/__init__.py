@@ -6,7 +6,7 @@ from uuid import uuid1
 import numpy as np
 
 # Local
-from . import spatial
+from .spatial import DISTANCES, ASSIGNMENTS
 from .model import PREDICTION_MODELS
 
 NODATA = 'NODATA'
@@ -19,8 +19,8 @@ TERMINATE = 'TERMINATE'
 
 class MM3DOT():
 	def __init__(self, models,
-			dist_func=spatial.mahalanobis,
-			assign_func=spatial.hungarian,
+			dist_func='mahalanobis',
+			assign_func='hungarian',
 			hold_lost=10,
 			**kwargs
 		):
@@ -28,8 +28,8 @@ class MM3DOT():
 		"""
 		self.__trk_id_cntr__ = 0
 		self.models = models
-		self.dist_func = dist_func
-		self.assign_func = assign_func
+		self.dist_func = DISTANCES[dist_func] if isinstance(dist_func, str) else dist_func
+		self.assign_func = ASSIGNMENTS[assign_func] if isinstance(assign_func, str) else assign_func
 		self.trackers = {}
 		self.frame_counter = 0
 		self.hold_lost = hold_lost

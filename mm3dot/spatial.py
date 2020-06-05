@@ -6,6 +6,11 @@ from scipy.spatial.transform import Rotation as R
 from numba import jit
 import numpy as np
 
+
+DISTANCES = {}
+ASSIGNMENTS = {}
+
+
 @jit
 def S_cov(H, P, R):
 	return np.linalg.inv(H @ P @ H.T + R)
@@ -32,7 +37,6 @@ def yaw_to_vec(yaw):
 	return x,y,z
 
 
-@jit
 def vec_to_yaw(x, y, z=0):
 	pi = np.where(x > 0.0, np.pi, -np.pi)
 	with np.errstate(divide='ignore', over='ignore'):
@@ -61,3 +65,8 @@ def hungarian(cost, **kargs):
 	am = np.in1d(range(cost.shape[0]), indices[0])
 	bm = np.in1d(range(cost.shape[1]), indices[1])
 	return indices, am, bm
+
+
+DISTANCES['mahalanobis'] = mahalanobis
+ASSIGNMENTS['greedy_threshold'] = greedy_threshold
+ASSIGNMENTS['hungarian'] = hungarian
