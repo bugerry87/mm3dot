@@ -93,7 +93,7 @@ def init_arg_parser(parents=[]):
 	return parser
 
 
-def print_state(model, *args):
+def print_state(model, *args, **kwargs):
 	likelihood = 0
 	for trk_id, tracker in model:
 		likelihood += tracker.likelihood
@@ -107,7 +107,7 @@ def print_state(model, *args):
 	print('\nFrame Likelihood:', likelihood)
 
 
-def train_cov(model, *args):
+def train_cov(model, *args, **kwargs):
 	errors = None
 	for i, (trk_id, tracker) in enumerate(model):
 		state = tracker.x.flatten()
@@ -119,11 +119,20 @@ def train_cov(model, *args):
 	pass
 
 
-def plot_state(model, frame=None, history=1,*args):
-	pos_idx = model.pos_idx[:2]
-	vel_idx = model.vel_idx[:2]
-	rot_idx = model.rot_idx[:2]
-	score_idx = model.score_idx[0]
+def plot_state(model, *args,
+	history=1,
+	pos_idx=(0,1),
+	rot_idx=(3,4),
+	score_idx=(6,),
+	vel_idx=(7,8),
+	**kwargs
+	):
+	"""
+	"""
+	pos_idx = pos_idx[:2]
+	vel_idx = vel_idx[:2]
+	rot_idx = rot_idx[:2]
+	score_idx = score_idx[0]
 	
 	def pred_quiver(pos, vel, color):
 		return plt.quiver(
@@ -211,12 +220,12 @@ def plot_gt(frame, gtloader):
 	pass
 
 
-def plot_show(*args):
+def plot_show(*args, **kwargs):
 	plt.show()
 	pass
 
 
-def plot_reset(*args):
+def plot_reset(*args, **kwargs):
 	plt.clf()
 	plt.scatter(0,0, marker='x', c='k')
 	plt.xlim(-250, 250)
@@ -275,7 +284,6 @@ def load_waymo(args, unparsed):
 			object = metrics_pb2.Object()
 			object.context_name = context
 			object.frame_timestamp_micros = timestamp
-			#object.score = tracker.log_likelihood
 			object.object.id = str(trk_id)
 			object.object.type = tracker.label
 			object.object.box.center_x = tracker.x[pos_idx[0]]
@@ -303,7 +311,6 @@ def load_waymo(args, unparsed):
 	
 	if args.visualize:
 		on_update.append(plot_state)
-		on_terminate.append(plot_show)
 		on_nodata.append(plot_reset)
 		plot_reset()
 	
@@ -312,15 +319,24 @@ def load_waymo(args, unparsed):
 		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
 		'NODATA': lambda *args: [nodata(*args) for nodata in on_nodata]
 		}
-	return dataloader, callbacks
+	return dataloader, callbacks, kwargs
 
 
 def load_argoverse(args, unparsed):
-	from mm3dot.datapi.argoverse import ArgoLoader, ArgoGTLoader, ArgoRecorder, init_argoverse_arg_parser
+	from mm3dot.datapi.argoverse import init_argoverse_arg_parser
 	parser = init_argoverse_arg_parser()
 	kwargs, _ = parser.parse_known_args(unparsed)
-	dataloader = ArgoLoader(**kwargs.__dict__)
+	
+	if kwargs.dataroot:
+		from mm3dot.datapi.argoverse_filter import ArgoDetectionFilter
+		dataloader = ArgoDetectionFilter(**kwargs.__dict__)
+	else:
+		from mm3dot.datapi.argoverse import ArgoDetectionLoader
+		dataloader = ArgoDetectionLoader(**kwargs.__dict__)
+		
+	
 	if kwargs.groundtruth is not None:
+		from mm3dot.datapi.argoverse import ArgoGTLoader
 		groundtruth = ArgoGTLoader(**kwargs.__dict__)
 	else:
 		groundtruth = None
@@ -336,23 +352,23 @@ def load_argoverse(args, unparsed):
 	
 	if args.visualize:
 		if groundtruth:
-			on_update.append(lambda _, frame: plot_gt(frame, groundtruth))
+			on_update.append(lambda _, frame, *args, **kwargs: plot_gt(frame, groundtruth))
 		on_update.append(plot_state)
-		on_terminate.append(plot_show)
 		on_nodata.append(plot_reset)
 		plot_reset()
 	
 	if kwargs.outputpath:
+		from mm3dot.datapi.argoverse import ArgoRecorder
 		recorder = ArgoRecorder(**kwargs.__dict__)
-		on_update.append(recorder.record)
-		on_terminate.append(recorder.record)
+		on_update.append(recorder)
+		on_terminate.append(recorder)
 	
 	callbacks = {
-		'UPDATE': lambda *args: [update(*args) for update in on_update],
-		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
-		'NODATA': lambda *args: [nodata(*args) for nodata in on_nodata]
+		'UPDATE': lambda *args, **kwargs: [update(*args, **kwargs) for update in on_update],
+		'TERMINATE': lambda *args, **kwargs: [terminate(*args, **kwargs) for terminate in on_terminate],
+		'NODATA': lambda *args, **kwargs: [nodata(*args, **kwargs) for nodata in on_nodata]
 		}
-	return dataloader, callbacks
+	return dataloader, callbacks, kwargs
 
 
 def load_fake(args, unparsed):
@@ -369,8 +385,7 @@ def load_fake(args, unparsed):
 		pass
 	
 	if args.visualize:
-		on_update.append(lambda *args: plot_state(*args))
-		on_terminate.append(plot_show)
+		on_update.append(plot_state)
 		plot_reset()
 		pass
 	
@@ -379,22 +394,22 @@ def load_fake(args, unparsed):
 		'TERMINATE': lambda *args: [terminate(*args) for terminate in on_terminate],
 		'NODATA': reset
 		}
-	return dataloader, callbacks
+	return dataloader, callbacks, kwargs
 
 
 def main(args, unparsed):
 	if args.dataset is None:
 		raise ValueError("ERROR: No dataset!")
 	elif 'kitti' in args.dataset:
-		dataloader, callbacks = load_kitti(args, unparsed)
+		dataloader, callbacks, kwargs = load_kitti(args, unparsed)
 	elif 'nuscenes' in args.dataset:
-		dataloader, callbacks = load_nusenes(args, unparsed)
+		dataloader, callbacks, kwargs = load_nusenes(args, unparsed)
 	elif 'waymo' in args.dataset:
-		dataloader, callbacks = load_waymo(args, unparsed)
+		dataloader, callbacks, kwargs = load_waymo(args, unparsed)
 	elif 'argoverse' in args.dataset:
-		dataloader, callbacks = load_argoverse(args, unparsed)
+		dataloader, callbacks, kwargs = load_argoverse(args, unparsed)
 	elif 'fake' in args.dataset:
-		dataloader, callbacks = load_fake(args, unparsed)
+		dataloader, callbacks, kwargs = load_fake(args, unparsed)
 	else:
 		raise ValueError("ERROR: Dataset '{}' unknown.".format(args.dataset))
 	
@@ -402,22 +417,18 @@ def main(args, unparsed):
 		models = load_models(ifile(args.model))
 	elif args.initializer in MOTION_MODELS:
 		initializer = MOTION_MODELS[args.initializer]
-		description = dataloader.description
-		models = {label:initializer(parse=unparsed, label=label, **description) for label in dataloader.labels}
+		desc = dataloader.description
+		models = {label:initializer(parse=unparsed, label=label, **desc) for label in dataloader.labels}
 	else:
 		raise ValueError("ERROR: Can't find any model! Please check --initializer or --model.")
 	
 	mm3dot = MM3DOT(models, **args.__dict__)
-	mm3dot.pos_idx = dataloader.pos_idx
-	mm3dot.vel_idx = dataloader.vel_idx
-	mm3dot.rot_idx = dataloader.rot_idx
-	mm3dot.score_idx = dataloader.score_idx
 	try:
 		for state, *args in mm3dot.run(dataloader):
 			if state in callbacks:
-				callbacks[state](mm3dot, *args)
+				callbacks[state](mm3dot, *args, **kwargs.__dict__)
 	except KeyboardInterrupt:
-		callbacks['TERMINATE'](mm3dot, *args)
+		callbacks['TERMINATE'](mm3dot, *args, **kwargs.__dict__)
 	pass
 
 

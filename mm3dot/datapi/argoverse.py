@@ -8,7 +8,6 @@ from argparse import ArgumentParser
 
 # Installed
 import numpy as np
-import argoverse
 
 # Local
 from . import Frame, Prototype, ifile
@@ -23,7 +22,9 @@ def init_argoverse_arg_parser(parents=[]):
 	parser.add_argument('--inputfiles', metavar='WILDCARD',
 		help="A wildcard to pre-computed detection results.")
 	parser.add_argument('--groundtruth', metavar='WILDCARD',
-		help="A wildcar to the ground truth files")
+		help="A wildcard to the ground truth files")
+	parser.add_argument('--dataroot', metavar='PATH',
+		help="Path to the argoverse dataset (required for filtering).")
 	parser.add_argument('--outputpath', metavar='PATH', default=None,
 		help="Filepath to store the tracking results at.")
 	parser.add_argument('--pos_idx', type=int, nargs='*', metavar='INT', default=(0,1,2),
@@ -38,8 +39,12 @@ def init_argoverse_arg_parser(parents=[]):
 		help="Indices for velocity information.")
 	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='INT', default=(),
 		help="Indices for accelerative information.")
-	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.9,
+	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.5,
 		help="Consider detections with scores above only.")
+	parser.add_argument('--dist_filter', type=float, metavar='FLOAT', default=0.0,
+		help="Consider trackers inside a range to the detection only.")
+	parser.add_argument('--off_ground_filter', type=float, metavar='FLOAT', default=1.0,
+		help="Consider detections on the ground only (fly-tolerance).")
 	return parser
 
 
@@ -50,7 +55,7 @@ def parse_path(path):
 	return root, subset, context, format, filename
 
 
-class ArgoLoader():
+class ArgoDetectionLoader():
 	"""
 	ArgoLoader loads precomputed detection results.
 	
@@ -129,7 +134,7 @@ class ArgoLoader():
 			data[i, self.rot_idx] = spatial.quat_to_vec(**proto.rotation.__dict__)[:len(self.rot_idx)]
 		frame = Frame(labels, data, self.description)
 		frame.root, frame.subset, frame.context, frame.format, frame.filename = parse_path(file)
-		frame.uuids = [UUID(proto.track_label_uuid) if proto.track_label_uuid else None for proto in protos]
+		frame.uuids = np.array([UUID(proto.track_label_uuid) if proto.track_label_uuid else None for proto in protos])
 		self.timestamp = frame.timestamp = proto.timestamp
 		self.context = frame.context
 		return frame
@@ -138,21 +143,25 @@ class ArgoLoader():
 	def __iter__(self):
 		"""
 		"""
+		idx = 0
 		context = None
 		for file in ifile(self.inputfiles, sort=True):
 			frame = self[file]
+			frame.idx = idx
+			idx += 1
 			
 			if context is None:
 				context = frame.context
 			elif context != frame.context:
 				context = frame.context
+				idx = 0
 				yield None # for reset
 			yield frame
 		pass
 	pass
 
 
-class ArgoGTLoader(ArgoLoader):
+class ArgoGTLoader(ArgoDetectionLoader):
 	"""
 	"""
 	def __init__(self, groundtruth, **kwargs):
@@ -207,7 +216,7 @@ class ArgoRecorder():
 		pos_idx=(0,1,2),
 		shape_idx=(3,4,5),
 		rot_idx=(6,7,8),
-		score_filter=0.0,
+		dist_filter=0.0,
 		lost_filter=1,
 		age_filter=0,
 		**kwargs
@@ -218,12 +227,14 @@ class ArgoRecorder():
 		self.pos_idx = pos_idx if isinstance(pos_idx, (tuple, list)) else (pos_idx,)
 		self.shape_idx = shape_idx if isinstance(shape_idx, (tuple, list)) else (shape_idx,)
 		self.rot_idx = rot_idx if isinstance(rot_idx, (tuple, list)) else (rot_idx,)
-		self.score_filter = score_filter
+		self.dist_filter = dist_filter
 		self.lost_filter = lost_filter
 		self.age_filter = age_filter
 		pass
 	
-	def record(self, model, frame):
+	def __call__(self, model, frame, *args, **kwargs):
+		"""
+		"""
 		path = os.path.join(self.outputpath, frame.subset, frame.context, frame.format, frame.filename)
 		os.makedirs(os.path.dirname(path), exist_ok=True)
 		
@@ -232,6 +243,8 @@ class ArgoRecorder():
 			if self.lost_filter and tracker.lost >= self.lost_filter:
 				continue
 			elif tracker.age < self.age_filter:
+				continue
+			elif self.dist_filter and self.dist_filter < tracker.distance:
 				continue
 				
 			x = tracker.x.flatten()

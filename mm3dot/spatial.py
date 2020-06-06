@@ -53,8 +53,8 @@ def quat_to_vec(x, y, z, w):
 	return x,y,z
 	
 
-def greedy_threshold(cost, gth=0.1, **kargs):
-	mask = cost <= gth
+def threshold(cost, th=0.1, **kargs):
+	mask = cost <= th
 	am = np.any(mask, axis=0)
 	bm = np.any(mask, axis=1)
 	return np.nonzero(mask), am, bm
@@ -68,5 +68,5 @@ def hungarian(cost, **kargs):
 
 
 DISTANCES['mahalanobis'] = mahalanobis
-ASSIGNMENTS['greedy_threshold'] = greedy_threshold
+ASSIGNMENTS['threshold'] = threshold
 ASSIGNMENTS['hungarian'] = hungarian

@@ -54,8 +54,8 @@ class ConstantAccumulation(Model):
 			self.u_dim = 0
 			self.F = np.eye(x_dim)
 			self.H = np.eye(z_dim, x_dim)
-			self.P = np.eye(x_dim) * 1000
-			self.P[z_dim:] *= 10
+			self.P = np.eye(x_dim) * 10
+			self.P[z_dim:] *= 1
 			self.Q = np.eye(x_dim)
 			self.Q[z_dim:] *= 0.015625
 			self.prediction_model = prediction_model
