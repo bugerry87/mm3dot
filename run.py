@@ -93,7 +93,9 @@ def init_arg_parser(parents=[]):
 	return parser
 
 
-def print_state(model, *args, **kwargs):
+timestamp = 0
+def print_state(model, frame, *args, **kwargs):
+	global timestamp
 	likelihood = 0
 	for trk_id, tracker in model:
 		likelihood += tracker.likelihood
@@ -105,6 +107,8 @@ def print_state(model, *args, **kwargs):
 	if len(model):
 		likelihood / len(model)
 	print('\nFrame Likelihood:', likelihood)
+	print('Timestamp:', frame.timestamp, 'Delta:', frame.timestamp - timestamp)
+	timestamp = frame.timestamp
 
 
 def train_cov(model, *args, **kwargs):
@@ -134,14 +138,23 @@ def plot_state(model, *args,
 	rot_idx = rot_idx[:2]
 	score_idx = score_idx[0]
 	
+	def det_quiver(det, rot, color):
+		return plt.quiver(
+			*det, *rot,
+			color=c1,
+			angles='xy',
+			scale_units='xy',
+			scale=0.125,
+			pivot='mid'
+			)
+	
 	def pred_quiver(pos, vel, color):
 		return plt.quiver(
 			*pos, *vel,
 			color=color,
 			angles='xy',
 			scale_units='xy',
-			scale=1,
-			width=1e-3
+			scale=1
 			)
 	
 	for trk_id, tracker in model:
@@ -152,15 +165,16 @@ def plot_state(model, *args,
 		pos = state[pos_idx,]
 		vel = state[vel_idx,]
 		rot = state[rot_idx,]
-		score = tracker.feature[score_idx]
 		det = tracker.feature[pos_idx,]
-		confi = np.exp(-tracker.lost) * score
 		
+		score = tracker.feature[score_idx]
+		confi = np.exp(-tracker.lost)
 		cs = np.abs(np.sin(0.125 * trk_id))
-		c1 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
-		c2 = ((*hsv_to_rgb((cs, 1, confi)), confi),)
+		#c1 = ((*hsv_to_rgb((cs, 1, 0.5)), score * 0.5),)
+		c1 = [(0.5,0.5,0,0.5)]
+		c2 = ((*hsv_to_rgb((cs, 1, 1)), confi),)
 		
-		if len(tracker.history) > history:
+		if len(tracker.history) >= history:
 			tracker.history.rotate(-1)
 			detection, prediction = tracker.history[0]
 			detection.set_offsets(det)
@@ -178,14 +192,7 @@ def plot_state(model, *args,
 				prediction.remove()
 				tracker.history[0] = (detection, None)
 		else:
-			detection = plt.quiver(
-				*det, *rot,
-				color=c1,
-				angles='xy',
-				scale_units='xy',
-				scale=0.0625,
-				pivot='mid'
-				)
+			detection = det_quiver(det, rot, c1)
 			if np.any(vel):
 				prediction = pred_quiver(pos, vel, c2)
 			else:
@@ -202,7 +209,8 @@ def plot_gt(frame, gtloader):
 	gt = gtloader[frame]
 	pos = gt.data.T[pos_idx,]
 	rot = gt.data.T[rot_idx,]
-	color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 0.5)), 0.5) for uuid in gt.uuids]
+	#color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 0.5)), 0.5) for uuid in gt.uuids]
+	color=[(0,0.5,0,0.5)]
 	
 	if 'plt' in gtloader.__dict__:
 		gtloader.plt.remove()
@@ -212,7 +220,7 @@ def plot_gt(frame, gtloader):
 		color=color,
 		angles='xy',
 		scale_units='xy',
-		scale=0.0625,
+		scale=0.125,
 		pivot='mid'
 		)
 	plt.draw()

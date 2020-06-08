@@ -39,12 +39,18 @@ def init_argoverse_arg_parser(parents=[]):
 		help="Indices for velocity information.")
 	parser.add_argument('--acl_idx', type=int, nargs='*', metavar='INT', default=(),
 		help="Indices for accelerative information.")
-	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.5,
+	parser.add_argument('--lost_filter', type=int, metavar='INT', default=2,
+		help="Reject trackers with higher lost frame from record.")
+	parser.add_argument('--age_filter', type=int, metavar='INT', default=1,
+		help="Reject trackers with lower age from record.")
+	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.7,
 		help="Consider detections with scores above only.")
 	parser.add_argument('--dist_filter', type=float, metavar='FLOAT', default=0.0,
 		help="Consider trackers inside a range to the detection only.")
 	parser.add_argument('--off_ground_filter', type=float, metavar='FLOAT', default=1.0,
 		help="Consider detections on the ground only (fly-tolerance).")
+	parser.add_argument('--merge', type=float, metavar='FLOAT', default=2.0,
+		help="Merge and mean detections intersecting its width*x.")
 	return parser
 
 

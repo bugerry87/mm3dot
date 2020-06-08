@@ -29,6 +29,17 @@ def mahalanobis(a, b, S, **kargs):
 	return do_jit(a, b, S)
 
 
+def euclidean(a, b, **kargs):
+	@jit
+	def do_jit(a, b):
+		N, M = len(a), len(b)
+		d = np.empty((N,M))
+		for n in range(N):
+			d[n] = np.sum((a[n] - b)**2, axis=-1)
+		return d
+	return do_jit(a, b)
+
+
 @jit
 def yaw_to_vec(yaw):
 	x = np.cos(yaw)
@@ -70,3 +81,17 @@ def hungarian(cost, **kargs):
 DISTANCES['mahalanobis'] = mahalanobis
 ASSIGNMENTS['threshold'] = threshold
 ASSIGNMENTS['hungarian'] = hungarian
+
+
+# Test
+if __name__ == '__main__':
+	np.random.seed(0)
+	a = np.random.rand(10,3)
+	mask = euclidean(a, a) < 0.25
+	print(mask)
+	x, y = np.nonzero(mask)
+	merge = np.zeros(a.shape)
+	merge[x] += a[y]
+	merge, n = np.unique(merge, return_counts=True, axis=0)
+	merge /= n.reshape(-1,1)
+	print(merge)

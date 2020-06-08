@@ -2,9 +2,11 @@
 # Installed
 from argoverse.map_representation.map_api import ArgoverseMap
 from argoverse.data_loading.argoverse_tracking_loader import ArgoverseTrackingLoader
+import numpy as np
 
 # Local
 from .argoverse import ArgoDetectionLoader
+from ..spatial import euclidean
 
 
 class ArgoDetectionFilter(ArgoDetectionLoader):
@@ -13,6 +15,7 @@ class ArgoDetectionFilter(ArgoDetectionLoader):
 	def __init__(self, dataroot,
 		score_filter=0.0,
 		off_ground_filter=0.0,
+		merge=0.0,
 		**kwargs
 		):
 		"""
@@ -20,6 +23,7 @@ class ArgoDetectionFilter(ArgoDetectionLoader):
 		super().__init__(**kwargs)
 		self.score_filter = score_filter
 		self.off_ground_filter = off_ground_filter
+		self.merge = merge
 		self.map = ArgoverseMap()
 		self.argo_loader = ArgoverseTrackingLoader(dataroot)
 		pass
@@ -56,6 +60,21 @@ class ArgoDetectionFilter(ArgoDetectionLoader):
 			frame.data = frame.data[mask]
 			frame.labels = frame.labels[mask]
 			frame.uuids = frame.uuids[mask]
+		
+		if self.merge:
+			m = len(frame)
+			pos = frame.data[:,self.pos_idx]
+			width = frame.data.T[self.shape_idx[1]]
+			mask = euclidean(pos, pos) - (width * self.merge * 0.5)**2 <= 0
+			x, y = np.nonzero(mask)
+			merge = np.zeros(frame.data.shape)
+			merge[x] += frame.data[y]
+			merge, idx, n = np.unique(merge, return_counts=True, return_index=True, axis=0)
+			frame.data = merge / n.reshape(-1,1)
+			frame.labels = frame.labels[idx]
+			frame.uuids = frame.uuids[idx]
+			print('Merged:', m-len(frame))
+			pass
 		
 		return frame
 	

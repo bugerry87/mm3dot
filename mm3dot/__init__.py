@@ -72,14 +72,14 @@ class MM3DOT():
 		
 	def match(self, frame, **kwargs):
 		N, M = len(self.trackers), frame.shape[-1]
-		track_features = np.empty((N,M))
+		track_states = np.empty((N,M))
 		track_covars = np.empty((N,M,M))
 		track_ids = np.empty(N)
 		for i, (idx, tracker) in enumerate(self.trackers.items()):
-			track_features[i] = tracker.feature
+			track_states[i] = tracker.x[:M].flatten()
 			track_covars[i] = tracker.SI
 			track_ids[i] = idx
-		cost = self.dist_func(track_features, frame.data, track_covars, **kwargs)
+		cost = self.dist_func(track_states, frame.data, track_covars, **kwargs)
 		(trk_id, det_id), trkm, detm = self.assign_func(cost, **kwargs)
 		return (track_ids[trk_id], *frame[det_id]), track_ids[~trkm], frame[~detm]
 		
@@ -105,7 +105,7 @@ class MM3DOT():
 		self.hold_lost = hold_lost if hold_lost else self.hold_lost
 		victims = []
 		for k, tracker in self.trackers.items():
-			if tracker.lost > self.hold_lost:
+			if tracker.lost >= self.hold_lost:
 				victims.append(k)
 		for k in victims:
 			del self.trackers[k]

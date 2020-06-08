@@ -27,7 +27,7 @@ class KalmanTracker(KalmanFilter):
 		self.Q = model.Q if 'Q' in model else np.eye(model.x_dim)
 		self.R = model.R if 'R' in model else np.eye(model.z_dim)
 		self.alpha = model.alpha if 'alpha' in model else 1.0
-		self.x[:len(self.z)] = feature[:len(self.z)][:,None]
+		#self.x[:len(self.z)] = feature[:len(self.z)][:,None]
 		self.feature = feature
 		
 		if 'motion_model' in model and model.motion_model is not None:
@@ -62,8 +62,8 @@ class KalmanTracker(KalmanFilter):
 				kwargs['H'] if 'H' in kwargs else None
 				)
 		n = min(len(args),2)
-		super().update(feature, *args[:n])
 		if feature is not None:
+			super().update(feature, *args[:n])
 			self.feature = feature
 		return self
 	
