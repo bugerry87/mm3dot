@@ -24,6 +24,6 @@ Replace `$DATAROOT` with where ever you used to store all the data.
 
 ```bash
 python run.py argoverse \
-	--inputfile '$DATAROOT/results/agroverse_detections_2020/validation/*/*/*.json' \
+	--inputfiles '$DATAROOT/results/agroverse_detections_2020/validation/*/*/*.json' \
 	--groundtruth '$DATAROOT/argoverse-tracking/val/*/per_sweep_annotations_amodal/*.json'
 ```
