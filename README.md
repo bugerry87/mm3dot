@@ -20,10 +20,10 @@ python run.py fake
 
 For the Argoverse dataset you may download the detection results of [coming soon]().
 Use wildcards to define a list of input files.
-Replace `[ROOT]` with where ever you used to store all the data.
+Replace `$DATAROOT` with where ever you used to store all the data.
 
 ```bash
 python run.py argoverse \
-	--inputfile '[ROOT]/results/agroverse_detections_2020/validation/*/*/*.json' \
-	--groundtruth '[ROOT]/argoverse-tracking/val/*/per_sweep_annotations_amodal/*.json'
+	--inputfile '$DATAROOT/results/agroverse_detections_2020/validation/*/*/*.json' \
+	--groundtruth '$DATAROOT/argoverse-tracking/val/*/per_sweep_annotations_amodal/*.json'
 ```
