@@ -29,7 +29,7 @@ def mahalanobis(a, b, S, **kargs):
 	return do_jit(a, b, S)
 
 
-def euclidean(a, b, **kargs):
+def euclidean(a, b, *args, **kargs):
 	@jit
 	def do_jit(a, b):
 		N, M = len(a), len(b)
@@ -62,25 +62,41 @@ def quat_to_vec(x, y, z, w):
 	y = np.sin(yaw)
 	z = np.sin(pitch)
 	return x,y,z
-	
-
-def threshold(cost, th=0.1, **kargs):
-	mask = cost <= th
-	am = np.any(mask, axis=0)
-	bm = np.any(mask, axis=1)
-	return np.nonzero(mask), am, bm
 
 
-def hungarian(cost, **kargs):
+def hungarian_match(cost, **kargs):
 	indices = linear_assignment(cost)
 	am = np.in1d(range(cost.shape[0]), indices[0])
 	bm = np.in1d(range(cost.shape[1]), indices[1])
 	return indices, am, bm
 
 
+def greedy_match(cost, **kargs):
+	"""
+	"""
+	matched_indices = []
+	N, M = cost.shape
+	rank = np.argsort(cost.flatten())
+	aidx, bidx = np.unravel_index(rank, cost.shape)
+	am = np.zeros(N, dtype=bool)
+	bm = np.zeros(M, dtype=bool)
+	taken = np.zeros(N*M, dtype=bool)
+	for i, (a, b) in enumerate(zip(aidx, bidx)):
+		if np.all(am): #all trackers already taken?
+			break
+		elif np.all(bm): #all detections already taken?
+			break
+		elif ~am[a] and ~bm[b]:
+			taken[i] = True
+			am[a] = True #mark as taken
+			bm[b] = True
+	return (aidx[taken], bidx[taken]), am, bm
+
+
 DISTANCES['mahalanobis'] = mahalanobis
-ASSIGNMENTS['threshold'] = threshold
-ASSIGNMENTS['hungarian'] = hungarian
+DISTANCES['euclidean'] = euclidean
+ASSIGNMENTS['hungarian'] = hungarian_match
+ASSIGNMENTS['greedy'] = greedy_match
 
 
 # Test

@@ -55,7 +55,7 @@ class ConstantAccumulation(Model):
 			self.F = np.eye(x_dim)
 			self.H = np.eye(z_dim, x_dim)
 			self.P = np.eye(x_dim) * 10
-			self.P[z_dim:] *= 1
+			self.P[z_dim:] *= 1000
 			self.Q = np.eye(x_dim)
 			self.Q[z_dim:] *= 0.015625
 			self.prediction_model = prediction_model
@@ -77,6 +77,7 @@ class ConstantAccumulation(Model):
 			parse_kwargs(**args.__dict__)
 		else:
 			parse_kwargs(**kwargs)
-	
+		pass
+	pass
 
 MOTION_MODELS['ConstantAccumulation'] = ConstantAccumulation

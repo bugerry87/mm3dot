@@ -88,9 +88,9 @@ class Prototype():
 
 class Frame():
 	def __init__(self, 
-		labels:list=[],
+		labels,
 		data:np.ndarray=np.empty(0),
-		describtion:dict=None
+		description:dict=None
 		):
 		'''
 		Init a frame of labeled features.
@@ -98,13 +98,13 @@ class Frame():
 		Args:
 			labels: <list(str)> The label names
 			data: <np.ndarray(float)> Numerical data!
-			describtion: <dict> Describes what the indices are represent, i.e.
+			description: <dict> Describes what the indices are represent, i.e.
 				{'pos_idx':(0,1,2), 'vel_idx':(-3,-2,-1)}
 		'''
 		assert(len(labels) == len(data))
 		self.labels = np.array(labels)
 		self.data = data
-		self.describtion = describtion
+		self.description = description
 		pass
 	
 	def __len__(self):
@@ -117,11 +117,12 @@ class Frame():
 	def __iter__(self):
 		return zip(self.labels, self.data)
 	
-	def __getitem__(self, slc_n, slc_m=None):
-		if slc_m is None:
-			return self.labels[slc_n], self.data[slc_n]
+	def __getitem__(self, slc):
+		if isinstance(slc, str):
+			n = self.labels == slc
+			return self.labels[n], self.data[n]
 		else:
-			return self.labels[slc_n], self.data[slc_n, slc_m]
+			return self.labels[slc], self.data[slc]
 	
 	@property
 	def shape(self):

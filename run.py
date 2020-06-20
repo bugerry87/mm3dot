@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 
+# Installed
+import numpy as np
+
 # Local
-from mm3dot import MM3DOT
+from mm3dot import MM3DOT, init_mm3dot_arg_parser, run_mm3dots
 from mm3dot.model import load_models, Model, MOTION_MODELS
-from mm3dot.spatial import DISTANCES, ASSIGNMENTS
 from mm3dot.datapi import ifile
 
 # Extensions
@@ -15,7 +17,6 @@ try:
 	import matplotlib.pyplot as plt
 	from matplotlib.colors import hsv_to_rgb
 	from collections import deque
-	import numpy as np
 except:
 	print("WARNING: In case of visualization matplotlib is required!")
 
@@ -38,32 +39,7 @@ def init_arg_parser(parents=[]):
 	parser.add_argument(
 		'--model', '-m',
 		metavar='WILDCARD',
-		nargs='*',
 		help='Wildcard to one or more model files.'
-		)
-	default = next(iter(MOTION_MODELS.keys()), None)
-	parser.add_argument(
-		'--initializer', '-i',
-		metavar='MOTION_MODEL',
-		choices=MOTION_MODELS.keys(),
-		default=default,
-		help='Initialize a new model based on a motion model. \n default={}'.format(default)
-		)
-	default = next(iter(DISTANCES.keys()), None)
-	parser.add_argument(
-		'--dist_func', '-d',
-		metavar='DISTANCE_FUNC',
-		choices=DISTANCES.keys(),
-		default=default,
-		help='Choose a distance function. \n default={}'.format(default)
-		)
-	default = 'hungarian' #next(iter(ASSIGNMENTS.keys()), None)
-	parser.add_argument(
-		'--assign_func', '-a',
-		metavar='ASSIGNMENT_FUNC',
-		choices=ASSIGNMENTS.keys(),
-		default=default,
-		help='Choose an assignment function. \n default={}'.format(default)
 		)
 	parser.add_argument(
 		'--visualize', '-V',
@@ -84,32 +60,42 @@ def init_arg_parser(parents=[]):
 		help='Plot text if provided.'
 		)
 	parser.add_argument(
-		'--hold_lost',
-		type=int,
-		metavar='INT',
-		default=10,
-		help="Num of lost frames before a tracker gets dropped."
+		'--separate',
+		metavar='FLAG',
+		type=bool,
+		nargs='?',
+		default=False,
+		const=True,
+		help='Run for each class separately.'
 		)
 	return parser
 
 
-timestamp = 0
 def print_state(model, frame, *args, **kwargs):
-	global timestamp
+	if 'timestamp' not in model.__dict__:
+		model.timestamp = 0.0
+		model.object_counter = 0
 	likelihood = 0
-	for trk_id, tracker in model:
-		likelihood += tracker.likelihood
-		feature = tracker.feature
-		state = tracker.x.flatten()[:feature.size]
-		print('\nError:', trk_id, np.round(np.abs(feature - state),2))
-		print('Age:', tracker.age, 'Lost:', tracker.lost, 'Score:', tracker.score)
-		print('Likelihood:', tracker.likelihood, 'Mahalanobis', tracker.mahalanobis)
-	if len(model):
-		likelihood / len(model)
-	print('\nFrame Likelihood:', likelihood)
-	print('Timestamp:', frame.timestamp, 'Delta:', frame.timestamp - timestamp)
-	timestamp = frame.timestamp
-
+	with np.printoptions(precision=3, suppress=True):
+		for trk_id, tracker in model:
+			likelihood += tracker.likelihood
+			feature = tracker.feature
+			state = tracker.x.flatten()[:feature.size]
+			print('\nTracker:', trk_id, tracker.x.flatten())
+			print('Detection:', np.round(feature,2))
+			print('Error:', np.abs(feature - state))
+			print('Age:', tracker.age, 'Lost:', tracker.lost, 'Score:', tracker.score)
+			print('Likelihood:', tracker.likelihood, 'Mahalanobis', tracker.mahalanobis)
+		if len(model):
+			likelihood / len(model)
+		model.object_counter += len(frame)
+		print('\nFrame:', frame.context, frame.idx)
+		print('Likelihood:', likelihood)
+		print('Timestamp:', frame.timestamp, 'Delta:', frame.timestamp - model.timestamp)
+		print('Objects:', len(frame), 'Objects Total:', model.object_counter)
+		model.timestamp = frame.timestamp
+	pass
+	
 
 def train_cov(model, *args, **kwargs):
 	errors = None
@@ -127,8 +113,10 @@ def plot_state(model, *args,
 	history=1,
 	pos_idx=(0,1),
 	rot_idx=(3,4),
-	score_idx=(6,),
+	#score_idx=(6,),
 	vel_idx=(7,8),
+	age_filter=0,
+	lost_filter=0,
 	**kwargs
 	):
 	"""
@@ -136,7 +124,7 @@ def plot_state(model, *args,
 	pos_idx = pos_idx[:2]
 	vel_idx = vel_idx[:2]
 	rot_idx = rot_idx[:2]
-	score_idx = score_idx[0]
+	#score_idx = score_idx[0] if len(score_idx) else None
 	
 	def det_quiver(det, rot, color):
 		return plt.quiver(
@@ -158,6 +146,11 @@ def plot_state(model, *args,
 			)
 	
 	for trk_id, tracker in model:
+		if tracker.age < age_filter:
+			continue
+		if tracker.lost > lost_filter:
+			continue
+	
 		if 'history' not in tracker.__dict__:
 			tracker.history = deque()
 		
@@ -167,11 +160,11 @@ def plot_state(model, *args,
 		rot = state[rot_idx,]
 		det = tracker.feature[pos_idx,]
 		
-		score = tracker.feature[score_idx]
+		#score = tracker.feature[score_idx]
 		confi = np.exp(-tracker.lost)
 		cs = np.abs(np.sin(0.125 * trk_id))
 		#c1 = ((*hsv_to_rgb((cs, 1, 0.5)), score * 0.5),)
-		c1 = [(0.5,0.5,0,0.5)]
+		c1 = [(0.5,0.5,0, confi)]
 		c2 = ((*hsv_to_rgb((cs, 1, 1)), confi),)
 		
 		if len(tracker.history) >= history:
@@ -198,24 +191,34 @@ def plot_state(model, *args,
 			else:
 				prediction = None
 			tracker.history.append((detection, prediction))
+	
 	plt.draw()
-	plt.pause(0.1)
+	plt.pause(0.01)
 	pass
 
 
-def plot_gt(frame, gtloader):
-	pos_idx = gtloader.pos_idx[:2]
-	rot_idx = gtloader.rot_idx[:2]
-	gt = gtloader[frame]
+def plot_drop(model, trackers, *args, **kwargs):
+	for tracker in trackers.values():
+		if 'history' in tracker.__dict__:
+			for detection, prediction in tracker.history:
+				detection.remove()
+				prediction.remove()
+	pass
+
+
+def plot_gt(model, frame, groundtruth, *args, **kwargs):
+	pos_idx = groundtruth.pos_idx[:2]
+	rot_idx = groundtruth.rot_idx[:2]
+	gt = groundtruth[frame]
 	pos = gt.data.T[pos_idx,]
 	rot = gt.data.T[rot_idx,]
 	#color = [(*hsv_to_rgb((np.abs(np.sin(0.125 * uuid.int)), 0.5, 0.5)), 0.5) for uuid in gt.uuids]
 	color=[(0,0.5,0,0.5)]
 	
-	if 'plt' in gtloader.__dict__:
-		gtloader.plt.remove()
+	if 'plt' in groundtruth.__dict__:
+		groundtruth.plt.remove()
 	
-	gtloader.plt = plt.quiver(
+	groundtruth.plt = plt.quiver(
 		pos[0], pos[1], rot[0], rot[1],
 		color=color,
 		angles='xy',
@@ -224,7 +227,7 @@ def plot_gt(frame, gtloader):
 		pivot='mid'
 		)
 	plt.draw()
-	plt.pause(0.1)
+	plt.pause(0.01)
 	pass
 
 
@@ -233,11 +236,16 @@ def plot_show(*args, **kwargs):
 	pass
 
 
-def plot_reset(*args, **kwargs):
+def plot_center(x, y):
+	#plt.scatter(x, y, marker='x', c='k')
+	plt.xlim(x - 100, x + 100)
+	plt.ylim(y - 100, y + 100)
+	pass
+
+
+def plot_reset():
 	plt.clf()
-	plt.scatter(0,0, marker='x', c='k')
-	plt.xlim(-250, 250)
-	plt.ylim(-250, 250)
+	plot_center(0, 0)
 	pass
 
 
@@ -256,9 +264,8 @@ def save_models(model, filename, ages):
 	pass
 	
 
-def reset(model):
+def reset(*args, **kwargs):
 	print("\n_______________MODEL_RESET_______________\n")
-	model.reset()
 	pass
 	
 
@@ -336,20 +343,24 @@ def load_argoverse(args, unparsed):
 	kwargs, _ = parser.parse_known_args(unparsed)
 	
 	if kwargs.dataroot:
-		from mm3dot.datapi.argoverse_filter import ArgoDetectionFilter
+		from mm3dot.datapi.argoverse_filter import ArgoDetectionFilter, init_argoverse_filter_arg_parser
+		parser = init_argoverse_filter_arg_parser(parents=[parser])
+		kwargs, _ = parser.parse_known_args(unparsed)
 		dataloader = ArgoDetectionFilter(**kwargs.__dict__)
 	else:
 		from mm3dot.datapi.argoverse import ArgoDetectionLoader
 		dataloader = ArgoDetectionLoader(**kwargs.__dict__)
-		
+	kwargs.dataloader = dataloader
 	
 	if kwargs.groundtruth is not None:
 		from mm3dot.datapi.argoverse import ArgoGTLoader
 		groundtruth = ArgoGTLoader(**kwargs.__dict__)
+		kwargs.groundtruth = groundtruth
 	else:
 		groundtruth = None
 	
 	on_update = []
+	on_drop = []
 	on_terminate = []
 	on_nodata = []
 	
@@ -360,19 +371,30 @@ def load_argoverse(args, unparsed):
 	
 	if args.visualize:
 		if groundtruth:
-			on_update.append(lambda _, frame, *args, **kwargs: plot_gt(frame, groundtruth))
+			on_update.append(plot_gt)
+		if kwargs.dataroot:
+			on_update.append(lambda *args, **kwargs: plot_center(*dataloader.ego.translation[:2]))
 		on_update.append(plot_state)
+		on_drop.append(plot_drop)
 		on_nodata.append(plot_reset)
 		plot_reset()
 	
-	if kwargs.outputpath:
+	if kwargs.outputpath is None:
+		pass
+	elif kwargs.dataroot:
+		from mm3dot.datapi.argoverse_filter import ArgoEgoRecorder
+		recorder = ArgoEgoRecorder(argo_loader=dataloader.argo_loader, **kwargs.__dict__)
+		kwargs.recorder = recorder
+		on_update.append(recorder.record)
+	else:
 		from mm3dot.datapi.argoverse import ArgoRecorder
 		recorder = ArgoRecorder(**kwargs.__dict__)
-		on_update.append(recorder)
-		on_terminate.append(recorder)
+		kwargs.recorder = recorder
+		on_update.append(recorder.record)
 	
 	callbacks = {
 		'UPDATE': lambda *args, **kwargs: [update(*args, **kwargs) for update in on_update],
+		'DROP': lambda *args, **kwargs: [drop(*args, **kwargs) for drop in on_drop],
 		'TERMINATE': lambda *args, **kwargs: [terminate(*args, **kwargs) for terminate in on_terminate],
 		'NODATA': lambda *args, **kwargs: [nodata(*args, **kwargs) for nodata in on_nodata]
 		}
@@ -430,18 +452,28 @@ def main(args, unparsed):
 	else:
 		raise ValueError("ERROR: Can't find any model! Please check --initializer or --model.")
 	
-	mm3dot = MM3DOT(models, **args.__dict__)
-	try:
-		for state, *args in mm3dot.run(dataloader):
-			if state in callbacks:
-				callbacks[state](mm3dot, *args, **kwargs.__dict__)
-	except KeyboardInterrupt:
-		callbacks['TERMINATE'](mm3dot, *args, **kwargs.__dict__)
+	if False: #separate
+		try:
+			match_idx = (*dataloader.pos_idx, *dataloader.rot_idx)
+			for state, model, *args in run_mm3dots(dataloader, models, args.__dict__, match_idx=match_idx):
+				if state in callbacks:
+					callbacks[state](model, *args, **kwargs.__dict__)
+		except KeyboardInterrupt:
+			callbacks['TERMINATE'](model, *args, **kwargs.__dict__)
+	else:
+		model = MM3DOT(models, **args.__dict__)
+		try:
+			for state, *args in model.run(dataloader):
+				if state in callbacks:
+					callbacks[state](model, *args, **kwargs.__dict__)
+		except KeyboardInterrupt:
+			callbacks['TERMINATE'](model, *args, **kwargs.__dict__)
 	pass
 
 
 if __name__ == '__main__':
 	parser = init_arg_parser()
+	parser = init_mm3dot_arg_parser([parser])
 	args, unparsed = parser.parse_known_args()
 	if args.dataset is None:
 		parser.print_help()

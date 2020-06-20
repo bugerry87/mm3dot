@@ -4,7 +4,6 @@
 import os
 import json
 from uuid import UUID
-from argparse import ArgumentParser
 
 # Installed
 import numpy as np
@@ -15,6 +14,7 @@ from .. import spatial
 
 
 def init_argoverse_arg_parser(parents=[]):
+	from argparse import ArgumentParser
 	parser = ArgumentParser(
 		parents=parents,
 		description='Arguments for a Agroverse lib'
@@ -41,16 +41,10 @@ def init_argoverse_arg_parser(parents=[]):
 		help="Indices for accelerative information.")
 	parser.add_argument('--lost_filter', type=int, metavar='INT', default=2,
 		help="Reject trackers with higher lost frame from record.")
-	parser.add_argument('--age_filter', type=int, metavar='INT', default=1,
+	parser.add_argument('--age_filter', type=int, metavar='INT', default=2,
 		help="Reject trackers with lower age from record.")
-	parser.add_argument('--score_filter', type=float, metavar='FLOAT', default=0.7,
-		help="Consider detections with scores above only.")
 	parser.add_argument('--dist_filter', type=float, metavar='FLOAT', default=0.0,
 		help="Consider trackers inside a range to the detection only.")
-	parser.add_argument('--off_ground_filter', type=float, metavar='FLOAT', default=1.0,
-		help="Consider detections on the ground only (fly-tolerance).")
-	parser.add_argument('--merge', type=float, metavar='FLOAT', default=2.0,
-		help="Merge and mean detections intersecting its width*x.")
 	return parser
 
 
@@ -107,12 +101,12 @@ class ArgoDetectionLoader():
 		self.acl_idx = acl_idx if isinstance(acl_idx, (tuple, list)) else (acl_idx,)
 		self.z_dim = np.max((*self.pos_idx, *self.shape_idx, *self.rot_idx, *self.score_idx))+1
 		self.x_dim = np.max((self.z_dim, *self.vel_idx, *self.acl_idx))+1
-		self.labels = ["VEHICLE", "PEDESTRIAN", 
-			"ON_ROAD_OBSTACLE", "LARGE_VEHICLE", "BICYCLE",
-			"BICYCLIST", "BUS", "OTHER_MOVERS", "TRAILER",
-			"MOTORCYCLIST", "MOPED", "MOTORCYCLE", "STROLLER",
-			"EMERGENCY_VEHICLE", "ANIMAL"
-			]
+		self.labels = ["VEHICLE", "PEDESTRIAN"] 
+		#	"ON_ROAD_OBSTACLE", "LARGE_VEHICLE", "BICYCLE",
+		#	"BICYCLIST", "BUS", "OTHER_MOVERS", "TRAILER",
+		#	"MOTORCYCLIST", "MOPED", "MOTORCYCLE", "STROLLER",
+		#	"EMERGENCY_VEHICLE", "ANIMAL"
+		#	]
 		self.description = {
 			'pos_idx':self.pos_idx,
 			'shape_idx':self.shape_idx,
@@ -238,7 +232,7 @@ class ArgoRecorder():
 		self.age_filter = age_filter
 		pass
 	
-	def __call__(self, model, frame, *args, **kwargs):
+	def record(self, model, frame, *args, **kwargs):
 		"""
 		"""
 		path = os.path.join(self.outputpath, frame.subset, frame.context, frame.format, frame.filename)
