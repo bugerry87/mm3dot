@@ -76,16 +76,16 @@ def print_state(model, frame, *args, **kwargs):
 		model.timestamp = 0.0
 		model.object_counter = 0
 	likelihood = 0
-	with np.printoptions(precision=3, suppress=True):
+	with np.printoptions(precision=2, suppress=True):
 		for trk_id, tracker in model:
 			likelihood += tracker.likelihood
 			feature = tracker.feature
 			state = tracker.x.flatten()[:feature.size]
 			print('\nTracker:', trk_id, tracker.x.flatten())
-			print('Detection:', np.round(feature,2))
+			print('Detection:', feature)
 			print('Error:', np.abs(feature - state))
 			print('Age:', tracker.age, 'Lost:', tracker.lost, 'Score:', tracker.score)
-			print('Likelihood:', tracker.likelihood, 'Mahalanobis', tracker.mahalanobis)
+			print('Likelihood:', tracker.likelihood, 'Distance', tracker.dist)
 		if len(model):
 			likelihood / len(model)
 		model.object_counter += len(frame)
@@ -202,7 +202,8 @@ def plot_drop(model, trackers, *args, **kwargs):
 		if 'history' in tracker.__dict__:
 			for detection, prediction in tracker.history:
 				detection.remove()
-				prediction.remove()
+				if prediction:
+					prediction.remove()
 	pass
 
 

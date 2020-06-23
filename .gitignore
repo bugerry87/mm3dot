@@ -2,5 +2,6 @@ __pycache__
 *.bin
 results/
 data/
+models/
 *.zip
 *.tar.*

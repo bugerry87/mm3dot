@@ -70,10 +70,6 @@ class KalmanTracker(KalmanFilter):
 	@property
 	def score(self):
 		return np.exp(-self.mahalanobis)
-	
-	@property
-	def distance(self):
-		return self.mahalanobis
 
 	def save(self, filename):
 		np.savez(

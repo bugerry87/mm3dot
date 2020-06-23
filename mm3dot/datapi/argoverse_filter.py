@@ -163,7 +163,7 @@ class ArgoEgoRecorder(ArgoRecorder):
 				continue
 			elif tracker.age < self.age_filter:
 				continue
-			elif self.dist_filter and self.dist_filter < tracker.distance:
+			elif self.dist_filter and self.dist_filter < tracker.dist:
 				continue
 				
 			x = tracker.x.flatten()
@@ -173,6 +173,7 @@ class ArgoEgoRecorder(ArgoRecorder):
 			pos = dict(zip('xyz', ego[0]))
 			obj = dict(zip(['length','width','height'], x[self.shape_idx,]))
 			uuid = tracker.uuid
+			
 			rot = spatial.vec_to_yaw(*(ego[1] - ego[0]))
 			rot = spatial.R.from_euler('zyx', (rot, 0, 0))
 			rot = dict(zip('xyzw', rot.as_quat()))

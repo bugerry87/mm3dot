@@ -45,6 +45,10 @@ def init_argoverse_arg_parser(parents=[]):
 		help="Reject trackers with lower age from record.")
 	parser.add_argument('--dist_filter', type=float, metavar='FLOAT', default=0.0,
 		help="Consider trackers inside a range to the detection only.")
+	parser.add_argument('--rot_type', metavar='STR', nargs='?', default='vec',
+		choices=['euler', 'vec', 'quat'],
+		help='Type of handling object rotations.'
+		)
 	return parser
 
 
@@ -88,6 +92,7 @@ class ArgoDetectionLoader():
 		score_idx=(9,),
 		vel_idx=(10,11,12),
 		acl_idx=(),
+		rot_type='vec',
 		**kwargs
 		):
 		"""
@@ -101,6 +106,7 @@ class ArgoDetectionLoader():
 		self.acl_idx = acl_idx if isinstance(acl_idx, (tuple, list)) else (acl_idx,)
 		self.z_dim = np.max((*self.pos_idx, *self.shape_idx, *self.rot_idx, *self.score_idx))+1
 		self.x_dim = np.max((self.z_dim, *self.vel_idx, *self.acl_idx))+1
+		self.rot_type = rot_type
 		self.labels = ["VEHICLE", "PEDESTRIAN"] 
 		#	"ON_ROAD_OBSTACLE", "LARGE_VEHICLE", "BICYCLE",
 		#	"BICYCLIST", "BUS", "OTHER_MOVERS", "TRAILER",
@@ -131,7 +137,16 @@ class ArgoDetectionLoader():
 			data[i, self.pos_idx] = proto.center['x','y','z'][:len(self.pos_idx)]
 			data[i, self.shape_idx] = proto['length', 'width', 'height'][:len(self.shape_idx)]
 			data[i, self.score_idx] = proto.score if 'score' in proto else 1.0
-			data[i, self.rot_idx] = spatial.quat_to_vec(**proto.rotation.__dict__)[:len(self.rot_idx)]
+			if self.rot_type == 'vec':
+				data[i, self.rot_idx] = spatial.quat_to_vec(**proto.rotation.__dict__)[:len(self.rot_idx)]
+			elif self.rot_type == 'euler':
+				vec = spatial.quat_to_vec(**proto.rotation.__dict__)
+				data[i, self.rot_idx] = spatial.vec_to_yaw(vec)[:len(self.rot_idx)]
+			elif self.rot_type == 'quat':
+				data[i, self.rot_idx] = (proto.rotation.__dict__[k] for k in 'xyzw')[:len(self.rot_idx)]
+			else:
+				raise ValueError("Rotation type '{}' not supported!".format(self.rot_type))
+			
 		frame = Frame(labels, data, self.description)
 		frame.root, frame.subset, frame.context, frame.format, frame.filename = parse_path(file)
 		frame.uuids = np.array([UUID(proto.track_label_uuid) if proto.track_label_uuid else None for proto in protos])
@@ -219,6 +234,7 @@ class ArgoRecorder():
 		dist_filter=0.0,
 		lost_filter=1,
 		age_filter=0,
+		rot_type='vec',
 		**kwargs
 		):
 		"""
@@ -230,6 +246,7 @@ class ArgoRecorder():
 		self.dist_filter = dist_filter
 		self.lost_filter = lost_filter
 		self.age_filter = age_filter
+		self.rot_type = rot_type
 		pass
 	
 	def record(self, model, frame, *args, **kwargs):
@@ -251,7 +268,18 @@ class ArgoRecorder():
 			pos = dict(zip('xyz', x[self.pos_idx,]))
 			obj = dict(zip(['length','width','height'], x[self.shape_idx,]))
 			uuid = tracker.uuid
-			rot = spatial.vec_to_yaw(*x[self.rot_idx,])
+			if self.rot_type == 'vec':
+				rot = spatial.vec_to_yaw(*x[self.rot_idx,])
+				rot = spatial.R.from_euler('zyx', (rot, 0, 0))
+				rot = dict(zip('xyzw', rot.as_quat()))
+			elif self.rot_type == 'euler':
+				rot = spatial.R.from_euler('zyx', (x[self.rot_idx], 0, 0))
+				rot = dict(zip('xyzw', rot.as_quat()))
+			elif self.rot_type == 'quat':
+				rot = dict(zip('xyzw', x[self.rot_idx,]))
+			else:
+				raise ValueError("Rotation type '{}' not supported!".format(self.rot_type))
+				
 			rot = spatial.R.from_euler('zyx', (rot, 0, 0))
 			rot = dict(zip('xyzw', rot.as_quat()))
 			

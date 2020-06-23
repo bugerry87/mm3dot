@@ -32,7 +32,7 @@ def init_mm3dot_arg_parser(parents=[]):
 		default=default,
 		help='Initialize a new model based on a motion model. \n default={}'.format(default)
 		)
-	default = 'mahalanobis' #next(iter(DISTANCES.keys()), None)
+	default = 'iou_2d' #next(iter(DISTANCES.keys()), None)
 	parser.add_argument(
 		'--dist_func',
 		metavar='DISTANCE_FUNC',
@@ -50,8 +50,10 @@ def init_mm3dot_arg_parser(parents=[]):
 		)
 	parser.add_argument('--max_lost', type=int, metavar='INT', default=10,
 		help="Num of lost frames before a tracker gets dropped.")
-	parser.add_argument('--max_dist', type=float, metavar='FLOAT', default=11.0,
+	parser.add_argument('--max_dist', type=float, metavar='FLOAT', default=0.9,
 		help="Max accepted distance threshold for assignment.")
+	parser.add_argument('--match_idx', type=int, nargs='*', metavar='INT', default=(0,1,3,4,6,7),
+		help="Indices to be considered for data association (default=None -> considers all).")
 	return parser
 
 
@@ -61,6 +63,7 @@ class MM3DOT():
 			assign_func='hungarian',
 			max_lost=10,
 			max_dist=0.0,
+			match_idx=None,
 			**kwargs
 		):
 		"""
@@ -73,6 +76,7 @@ class MM3DOT():
 		self.frame_counter = 0
 		self.max_lost = max_lost
 		self.max_dist = max_dist
+		self.match_idx = match_idx
 		pass
 	
 	def __len__(self):
@@ -101,6 +105,7 @@ class MM3DOT():
 				tracker.uuid = uuid1()
 				tracker.age = 0
 				tracker.lost = 0
+				tracker.dist = 0
 				self.trackers[self.__trk_id_cntr__] = tracker
 			else:
 				print("WARNING: No model for label '{}'".format(label))
@@ -110,51 +115,38 @@ class MM3DOT():
 		for tracker in self.trackers.values():
 			tracker.predict(**kwargs)
 		
-	def match(self, frame, match_idx=None, max_dist=None, **kwargs):
-		if max_dist is not None:
-			self.max_dist = max_dist
-		if match_idx is None:
-			M = frame.shape[-1]
-			match_idx = slice(M)
-		else:
-			M = len(match_idx)
-		N = len(self.trackers)
-		track_states = np.empty((N,M))
-		track_covars = np.empty((N,M,M))
-		track_ids = np.empty(N)
-		for i, (idx, tracker) in enumerate(self.trackers.items()):
-			track_states[i] = tracker.x[match_idx,].flatten()
-			track_covars[i] = spatial.S_cov(tracker.H, tracker.P, tracker.R)[match_idx, match_idx] #tracker.SI[match_idx, match_idx]
-			track_ids[i] = idx
-		cost = self.dist_func(track_states, frame.data[:,match_idx], track_covars, **kwargs)
+	def match(self, frame, **kwargs):
+		cost, track_ids = self.dist_func(self.trackers, frame, self.match_idx, **kwargs)
 		(trk_id, det_id), trkm, detm = self.assign_func(cost, **kwargs)
+		cost = cost[(trk_id, det_id)]
 		if self.max_dist:
-			mask = cost[(trk_id, det_id)] > self.max_dist
+			mask = cost > self.max_dist
 			trkm[trk_id[mask]] = False
 			detm[det_id[mask]] = False
-		return (track_ids[trkm], *frame[detm]), track_ids[~trkm], frame[~detm]
+			cost = cost[~mask]
+		return (track_ids[trkm], *frame[detm], cost), track_ids[~trkm], frame[~detm]
 		
-	def update(self, frame, matches, lost, unmatched, **kwargs):
+	def update(self, matches, lost, unmatched, **kwargs):
 		# update matched trackers
 		self.frame_counter += 1
-		for trk_id, label, detection in zip(*matches):
+		for trk_id, label, detection, cost in zip(*matches):
 			if self.trackers[trk_id].label != label:
 				print("WARNING: Label changed!")
 			self.trackers[trk_id].lost = 0
 			self.trackers[trk_id].age += 1
+			self.trackers[trk_id].dist = cost
 			self.trackers[trk_id].update(detection, **kwargs)
 		# mark unmatched trackers
 		for trk_id in lost:
 			self.trackers[trk_id].lost += 1
 			self.trackers[trk_id].age += 1
+			self.trackers[trk_id].dist = np.inf
 			self.trackers[trk_id].update(None, **kwargs)
 		# spawn trackers for unmatched frame
 		self.spawn_trackers(zip(*unmatched))
 		return self
 	
-	def drop_trackers(self, max_lost=None, **kwargs):
-		if max_lost is not None:
-			self.max_lost = max_lost
+	def drop_trackers(self, **kwargs):
 		victims = {}
 		for trk_id, tracker in self.trackers.items():
 			if tracker.lost >= self.max_lost:
@@ -182,7 +174,7 @@ class MM3DOT():
 				continue
 			
 			match_results = self.match(frame, **kwargs)
-			self.update(frame, *match_results, **kwargs)
+			self.update(*match_results, **kwargs)
 			yield UPDATE, frame
 			
 			self.predict(**kwargs)
@@ -224,7 +216,7 @@ def run_mm3dots(dataloader, models, model_args, **runtime_args):
 				continue
 				
 			match_results = mm3dot.match(subframe, **runtime_args)
-			mm3dot.update(subframe, *match_results, **runtime_args)
+			mm3dot.update(*match_results, **runtime_args)
 			yield UPDATE, mm3dot, frame
 			
 			mm3dot.predict(**runtime_args)
